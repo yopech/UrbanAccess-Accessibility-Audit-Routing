@@ -20,6 +20,12 @@ import {
   openDatabase,
   saveObservation,
 } from "./db.js";
+import {
+  LOCATION_CONFIG,
+  locationQuality,
+  normalizeGeolocationPosition,
+  pickMoreAccurateSample,
+} from "./location.js";
 
 const byId = (id) => document.getElementById(id);
 const form = byId("observation-form");
@@ -30,6 +36,10 @@ const state = {
   listUrls: [],
   editingRecord: null,
   mapZoom: 18,
+  locationBest: null,
+  locationSettleTimer: null,
+  locationTimeout: null,
+  locationWatchId: null,
   toastTimer: null,
 };
 
@@ -73,7 +83,20 @@ function setFindingVisibility() {
   }
 }
 
+function stopLocationSearch() {
+  if (state.locationWatchId !== null) navigator.geolocation?.clearWatch(state.locationWatchId);
+  clearTimeout(state.locationSettleTimer);
+  clearTimeout(state.locationTimeout);
+  state.locationWatchId = null;
+  state.locationSettleTimer = null;
+  state.locationTimeout = null;
+  const button = byId("locate-button");
+  button.disabled = false;
+  button.innerHTML = '<span aria-hidden="true">◎</span> Определить моё место';
+}
+
 function resetForm() {
+  stopLocationSearch();
   revokeUrls(state.previewUrls);
   state.photos = [];
   state.editingRecord = null;
@@ -234,26 +257,68 @@ async function addPhotos(files) {
   if (allowed.length !== selectedCount) showToast("Некоторые файлы не были изображениями");
 }
 
+function rememberDeviceLocation(sample) {
+  byId("device-latitude").value = sample.latitude;
+  byId("device-longitude").value = sample.longitude;
+  byId("device-accuracy").value = sample.accuracy;
+}
+
+function selectDeviceLocation(sample) {
+  rememberDeviceLocation(sample);
+  byId("latitude").value = sample.latitude.toFixed(7);
+  byId("longitude").value = sample.longitude.toFixed(7);
+  byId("position-source").value = "GPS";
+  const suffix = locationQuality(sample.accuracy) === "PRECISE"
+    ? "точку можно поправить"
+    : "проверьте точку на карте";
+  byId("location-status").textContent = `GPS ±${Math.round(sample.accuracy)} м · ${suffix}`;
+  renderMap();
+}
+
+function finishLocationSearch() {
+  const best = state.locationBest;
+  stopLocationSearch();
+  if (!best) {
+    byId("location-status").textContent = "Не удалось получить свежую геопозицию";
+    showToast("Можно поставить точку на карте вручную");
+    return;
+  }
+  if (locationQuality(best.accuracy) === "POOR") {
+    rememberDeviceLocation(best);
+    byId("location-status").textContent = `GPS слишком неточный: ±${Math.round(best.accuracy)} м · точку не изменили`;
+    showToast("Включите точное местоположение или поставьте точку на карте");
+    return;
+  }
+  selectDeviceLocation(best);
+}
+
 function requestLocation() {
   const button = byId("locate-button");
   if (!navigator.geolocation) {
     showToast("Этот браузер не поддерживает геолокацию");
     return;
   }
+  stopLocationSearch();
+  state.locationBest = null;
   button.disabled = true;
-  byId("location-status").textContent = "Получаем точные координаты…";
-  navigator.geolocation.getCurrentPosition(
+  button.textContent = "Уточняем местоположение…";
+  byId("location-status").textContent = "Ищем свежий и точный сигнал…";
+  state.locationWatchId = navigator.geolocation.watchPosition(
     (position) => {
-      const { latitude, longitude, accuracy } = position.coords;
-      byId("latitude").value = latitude.toFixed(7);
-      byId("longitude").value = longitude.toFixed(7);
-      byId("device-latitude").value = latitude;
-      byId("device-longitude").value = longitude;
-      byId("device-accuracy").value = accuracy;
-      byId("position-source").value = "GPS";
-      byId("location-status").textContent = `GPS ±${Math.round(accuracy)} м · точку можно поправить`;
-      button.disabled = false;
-      renderMap();
+      const sample = normalizeGeolocationPosition(position);
+      if (!sample) {
+        byId("location-status").textContent = "Отбрасываем устаревшую геопозицию…";
+        return;
+      }
+      state.locationBest = pickMoreAccurateSample(state.locationBest, sample);
+      rememberDeviceLocation(state.locationBest);
+      byId("location-status").textContent = `Уточняем: сейчас ±${Math.round(state.locationBest.accuracy)} м…`;
+      const quality = locationQuality(state.locationBest.accuracy);
+      if (quality === "PRECISE") {
+        finishLocationSearch();
+      } else if (quality === "ACCEPTABLE" && state.locationSettleTimer === null) {
+        state.locationSettleTimer = setTimeout(finishLocationSearch, LOCATION_CONFIG.settleTimeMs);
+      }
     },
     (error) => {
       const messages = {
@@ -261,12 +326,17 @@ function requestLocation() {
         2: "Не удалось определить положение",
         3: "GPS не ответил вовремя",
       };
-      byId("location-status").textContent = messages[error.code] || "Ошибка геолокации";
-      button.disabled = false;
-      showToast("Можно ввести координаты вручную");
+      if (error.code === 1) {
+        stopLocationSearch();
+        byId("location-status").textContent = messages[error.code];
+        showToast("Разрешите геолокацию для этого сайта или поставьте точку вручную");
+      } else if (!state.locationBest) {
+        byId("location-status").textContent = `${messages[error.code] || "Ошибка геолокации"} · продолжаем искать…`;
+      }
     },
-    { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    { enableHighAccuracy: true, timeout: LOCATION_CONFIG.searchTimeMs, maximumAge: LOCATION_CONFIG.maxSampleAgeMs },
   );
+  state.locationTimeout = setTimeout(finishLocationSearch, LOCATION_CONFIG.searchTimeMs);
 }
 
 function lonToTileX(longitude, zoom) {
@@ -327,6 +397,7 @@ function renderMap() {
 }
 
 function movePointFromMap(event) {
+  stopLocationSearch();
   const map = byId("map");
   const rect = map.getBoundingClientRect();
   const selectedLatitude = numberOrNull(byId("latitude").value);
@@ -589,6 +660,7 @@ function bindEvents() {
   byId("zoom-in").addEventListener("click", () => { state.mapZoom = Math.min(20, state.mapZoom + 1); renderMap(); });
   byId("zoom-out").addEventListener("click", () => { state.mapZoom = Math.max(14, state.mapZoom - 1); renderMap(); });
   [byId("latitude"), byId("longitude")].forEach((input) => input.addEventListener("change", () => {
+    stopLocationSearch();
     byId("position-source").value = "MANUAL";
     byId("location-status").textContent = "Точка указана вручную";
     renderMap();

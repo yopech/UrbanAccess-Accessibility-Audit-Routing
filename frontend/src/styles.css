@@ -18,8 +18,8 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--paper); }
-body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--paper); }
+html { overflow-x: clip; background: var(--paper); }
+body { margin: 0; min-height: 100vh; overflow-x: clip; color: var(--ink); background: var(--paper); }
 button, input, select, textarea { font: inherit; }
 button, label, select { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
@@ -90,6 +90,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .button:disabled { opacity: .55; cursor: progress; }
 .location-actions { display: grid; grid-template-columns: max-content 1fr; align-items: center; gap: 12px; margin: 14px 0 0; }
 .location-actions p { margin: 0; font-size: .78rem; }
+.location-help { margin: 8px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
 
 .map-block { margin-top: 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #e4e8e4; }
 .map-toolbar, .map-caption { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--surface-strong); font-size: .72rem; color: var(--muted); }
@@ -108,7 +109,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .field-group { min-width: 0; margin: 17px 0 0; padding: 0; border: 0; }
 .field-group legend { margin-bottom: 8px; }
 .segmented-control { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 13px; background: #e8ece8; }
-.segmented-control input, .choice-grid input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented-control input, .choice-grid input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  opacity: 0;
+  clip-path: inset(50%);
+}
 .segmented-control span { display: grid; place-items: center; min-height: 42px; padding: 8px; border-radius: 10px; color: var(--muted); text-align: center; font-size: .85rem; font-weight: 760; }
 .segmented-control input:checked + span { color: white; background: var(--brand); box-shadow: 0 3px 10px rgba(18,55,42,.2); }
 .choice-grid { display: grid; gap: 8px; }
@@ -159,7 +171,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .empty-state p { max-width: 360px; margin: 8px auto; }
 
 .bottom-nav { position: fixed; z-index: 40; left: 50%; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; width: min(760px,100%); transform: translateX(-50%); padding: 7px 10px max(7px, env(safe-area-inset-bottom)); border-top: 1px solid rgba(202,209,203,.9); background: rgba(255,254,250,.94); backdrop-filter: blur(18px); }
-.nav-item { position: relative; display: grid; justify-items: center; gap: 1px; min-height: 54px; padding: 6px; border: 0; border-radius: 13px; color: #748078; background: transparent; font-size: .69rem; }
+.nav-item { position: relative; display: grid; justify-items: center; gap: 1px; min-width: 0; min-height: 54px; padding: 6px; border: 0; border-radius: 13px; color: #748078; background: transparent; font-size: .69rem; }
 .nav-item > span { font-size: 1.2rem; line-height: 1; }
 .nav-item.is-active { color: var(--brand); background: var(--brand-soft); }
 .nav-item em { position: absolute; top: 3px; right: calc(50% - 31px); display: grid; place-items: center; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 999px; color: white; background: var(--accent); font-size: .63rem; font-style: normal; }

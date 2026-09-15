@@ -1,4 +1,5 @@
 import { observationToGeoJSONFeature, observationsToCSV, validateObservation } from "./domain.js";
+import { locationQuality, normalizeGeolocationPosition, pickMoreAccurateSample } from "./location.js";
 
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
@@ -61,6 +62,24 @@ test("CSV экранирует кавычки и переносит измере
   const csv = observationsToCSV([completeObservation({ comment: 'Пандус "слева"' })]);
   assert(csv.includes('"Пандус ""слева"""'));
   assert(csv.includes('"12"'));
+});
+
+test("устаревшая геопозиция не принимается", () => {
+  const position = { coords: { latitude: 55.75, longitude: 37.61, accuracy: 15 }, timestamp: 1_000 };
+  assert(normalizeGeolocationPosition(position, 32_000) === null);
+});
+
+test("из нескольких геопозиций выбирается самая точная", () => {
+  const rough = { latitude: 55.75, longitude: 37.61, accuracy: 900, timestamp: 1_000 };
+  const precise = { latitude: 55.76, longitude: 37.62, accuracy: 12, timestamp: 2_000 };
+  assert(pickMoreAccurateSample(rough, precise) === precise);
+  assert(pickMoreAccurateSample(precise, rough) === precise);
+});
+
+test("неточная геопозиция не считается пригодной", () => {
+  assert(locationQuality(12) === "PRECISE");
+  assert(locationQuality(70) === "ACCEPTABLE");
+  assert(locationQuality(500) === "POOR");
 });
 
 const results = document.getElementById("results");

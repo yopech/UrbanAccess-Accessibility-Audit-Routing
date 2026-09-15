@@ -1,4 +1,4 @@
-const SHELL_CACHE = "urbanaccess-shell-v3";
+const SHELL_CACHE = "urbanaccess-shell-v4";
 const TILE_CACHE = "urbanaccess-map-tiles-v1";
 const SHELL_FILES = [
   "./",
@@ -9,6 +9,7 @@ const SHELL_FILES = [
   "./src/app.js",
   "./src/db.js",
   "./src/domain.js",
+  "./src/location.js",
 ];
 
 self.addEventListener("install", (event) => {
