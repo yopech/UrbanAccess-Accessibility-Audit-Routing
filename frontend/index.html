@@ -73,18 +73,18 @@
 
             <div class="map-block">
               <div class="map-toolbar">
-                <span>Нажмите на карту, чтобы переставить точку</span>
+                <span>Нажмите на карту, чтобы поставить или поправить точку</span>
                 <div>
                   <button id="zoom-out" class="icon-button" type="button" aria-label="Уменьшить масштаб">−</button>
                   <button id="zoom-in" class="icon-button" type="button" aria-label="Увеличить масштаб">+</button>
                 </div>
               </div>
               <div id="map" class="map" role="application" aria-label="Карта для уточнения положения">
-                <div id="map-empty" class="map-empty">Получите GPS или введите координаты</div>
+                <div id="map-empty" class="map-empty" hidden></div>
                 <div class="map-marker" aria-hidden="true"><span></span></div>
               </div>
               <div class="map-caption">
-                <span>Карта требует сети; форма и GPS работают без неё.</span>
+                <span>Подложка требует сети; форма и GPS работают без неё.</span>
                 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
               </div>
             </div>

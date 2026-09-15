@@ -23,6 +23,7 @@ import {
 
 const byId = (id) => document.getElementById(id);
 const form = byId("observation-form");
+const DEFAULT_MAP_CENTER = { latitude: 55.7558, longitude: 37.6176 };
 const state = {
   photos: [],
   previewUrls: [],
@@ -288,12 +289,16 @@ function tileYToLat(y, zoom) {
 function renderMap() {
   const map = byId("map");
   map.querySelectorAll(".map-tile").forEach((tile) => tile.remove());
-  const latitude = numberOrNull(byId("latitude").value);
-  const longitude = numberOrNull(byId("longitude").value);
+  const selectedLatitude = numberOrNull(byId("latitude").value);
+  const selectedLongitude = numberOrNull(byId("longitude").value);
   const empty = byId("map-empty");
-  const valid = Number.isFinite(latitude) && latitude >= -85 && latitude <= 85 && Number.isFinite(longitude);
-  empty.hidden = valid;
-  if (!valid || map.clientWidth === 0) return;
+  const hasSelectedPoint = Number.isFinite(selectedLatitude) && selectedLatitude >= -85 && selectedLatitude <= 85 &&
+    Number.isFinite(selectedLongitude) && selectedLongitude >= -180 && selectedLongitude <= 180;
+  const latitude = hasSelectedPoint ? selectedLatitude : DEFAULT_MAP_CENTER.latitude;
+  const longitude = hasSelectedPoint ? selectedLongitude : DEFAULT_MAP_CENTER.longitude;
+  empty.hidden = true;
+  map.classList.toggle("has-selected-point", hasSelectedPoint);
+  if (map.clientWidth === 0) return;
 
   const zoom = state.mapZoom;
   const n = 2 ** zoom;
@@ -322,11 +327,14 @@ function renderMap() {
 }
 
 function movePointFromMap(event) {
-  if (byId("map-empty").hidden === false) return;
   const map = byId("map");
   const rect = map.getBoundingClientRect();
-  const latitude = Number(byId("latitude").value);
-  const longitude = Number(byId("longitude").value);
+  const selectedLatitude = numberOrNull(byId("latitude").value);
+  const selectedLongitude = numberOrNull(byId("longitude").value);
+  const hasSelectedPoint = Number.isFinite(selectedLatitude) && selectedLatitude >= -85 && selectedLatitude <= 85 &&
+    Number.isFinite(selectedLongitude) && selectedLongitude >= -180 && selectedLongitude <= 180;
+  const latitude = hasSelectedPoint ? selectedLatitude : DEFAULT_MAP_CENTER.latitude;
+  const longitude = hasSelectedPoint ? selectedLongitude : DEFAULT_MAP_CENTER.longitude;
   const centerX = lonToTileX(longitude, state.mapZoom);
   const centerY = latToTileY(latitude, state.mapZoom);
   const clickedX = centerX + (event.clientX - rect.left - rect.width / 2) / 256;

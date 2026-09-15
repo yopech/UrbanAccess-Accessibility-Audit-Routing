@@ -98,7 +98,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .map { position: relative; height: 260px; overflow: hidden; background: #dde4df; cursor: crosshair; touch-action: manipulation; }
 .map-tile { position: absolute; width: 256px; height: 256px; max-width: none; user-select: none; pointer-events: none; }
 .map-empty { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 30px; color: var(--muted); text-align: center; background: linear-gradient(135deg,#e9eee9,#dbe4de); }
-.map-marker { position: absolute; z-index: 5; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%,-100%); pointer-events: none; filter: drop-shadow(0 3px 2px rgba(0,0,0,.25)); }
+.map-empty[hidden] { display: none; }
+.map-marker { position: absolute; z-index: 5; left: 50%; top: 50%; display: none; width: 30px; height: 30px; transform: translate(-50%,-100%); pointer-events: none; filter: drop-shadow(0 3px 2px rgba(0,0,0,.25)); }
+.map.has-selected-point .map-marker { display: block; }
 .map-marker::before { content: ""; position: absolute; inset: 0; border-radius: 50% 50% 50% 0; background: var(--accent); transform: rotate(-45deg); }
 .map-marker span { position: absolute; z-index: 1; left: 9px; top: 9px; width: 12px; height: 12px; border: 3px solid white; border-radius: 50%; }
 .map-caption a { color: var(--brand); }
