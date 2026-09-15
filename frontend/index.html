@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#12372a" />
+    <meta name="description" content="Полевой сбор наблюдений о городской доступности" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./src/styles.css" />
+    <title>UrbanAccess — полевой сбор</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">UrbanAccess</p>
+        <h1>Полевые наблюдения</h1>
+      </div>
+      <div id="connection-badge" class="status-badge" aria-live="polite">Проверяем связь</div>
+    </header>
+
+    <main>
+      <section id="collector-view" class="view" aria-labelledby="collector-title">
+        <div class="intro-row">
+          <div>
+            <h2 id="collector-title">Новое наблюдение</h2>
+            <p id="form-mode-hint" class="muted">Сохраните черновик или отметьте запись готовой к проверке.</p>
+          </div>
+          <button id="reset-form" class="button button-ghost button-small" type="button">Очистить</button>
+        </div>
+
+        <div id="form-errors" class="error-summary" role="alert" hidden></div>
+
+        <form id="observation-form" novalidate>
+          <input id="record-id" type="hidden" />
+
+          <section class="card">
+            <div class="section-heading">
+              <span class="step-number">1</span>
+              <div>
+                <h3>Где и когда</h3>
+                <p>Получите GPS и при необходимости поправьте точку.</p>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Время наблюдения</span>
+              <input id="observed-at" name="observedAt" type="datetime-local" required />
+            </label>
+
+            <div class="location-actions">
+              <button id="locate-button" class="button button-primary" type="button">
+                <span aria-hidden="true">◎</span> Определить моё место
+              </button>
+              <p id="location-status" class="muted" aria-live="polite">Координаты ещё не получены</p>
+            </div>
+
+            <div class="coordinate-grid">
+              <label class="field">
+                <span>Широта</span>
+                <input id="latitude" name="latitude" type="number" inputmode="decimal" step="any" min="-90" max="90" placeholder="55.7558" />
+              </label>
+              <label class="field">
+                <span>Долгота</span>
+                <input id="longitude" name="longitude" type="number" inputmode="decimal" step="any" min="-180" max="180" placeholder="37.6176" />
+              </label>
+            </div>
+
+            <input id="device-latitude" type="hidden" />
+            <input id="device-longitude" type="hidden" />
+            <input id="device-accuracy" type="hidden" />
+            <input id="position-source" type="hidden" value="MANUAL" />
+
+            <div class="map-block">
+              <div class="map-toolbar">
+                <span>Нажмите на карту, чтобы переставить точку</span>
+                <div>
+                  <button id="zoom-out" class="icon-button" type="button" aria-label="Уменьшить масштаб">−</button>
+                  <button id="zoom-in" class="icon-button" type="button" aria-label="Увеличить масштаб">+</button>
+                </div>
+              </div>
+              <div id="map" class="map" role="application" aria-label="Карта для уточнения положения">
+                <div id="map-empty" class="map-empty">Получите GPS или введите координаты</div>
+                <div class="map-marker" aria-hidden="true"><span></span></div>
+              </div>
+              <div class="map-caption">
+                <span>Карта требует сети; форма и GPS работают без неё.</span>
+                <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Ориентир или описание места</span>
+              <input id="location-description" name="locationDescription" type="text" maxlength="240" placeholder="Например: северный вход, справа от остановки" />
+            </label>
+          </section>
+
+          <section class="card">
+            <div class="section-heading">
+              <span class="step-number">2</span>
+              <div>
+                <h3>Что обнаружено</h3>
+                <p>Выберите наиболее близкое описание.</p>
+              </div>
+            </div>
+
+            <label class="field">
+              <span>Контекст</span>
+              <select id="context-type" name="contextType">
+                <option value="STREET">Улица</option>
+                <option value="TRANSIT_STOP">Остановка</option>
+                <option value="UNDERGROUND_PASSAGE">Подземный переход</option>
+                <option value="METRO_STATION">Станция метро</option>
+                <option value="RAILWAY_STATION">Железнодорожная станция</option>
+                <option value="PLATFORM">Платформа</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Тип препятствия</span>
+              <select id="barrier-type" name="barrierType" required>
+                <option value="">Выберите тип</option>
+                <option value="CURB">Бордюр</option>
+                <option value="STAIRS">Лестница</option>
+                <option value="FENCE">Ограждение</option>
+                <option value="GATE">Ворота или калитка</option>
+                <option value="NARROW_SIDEWALK">Узкий тротуар</option>
+                <option value="BLOCKED_SIDEWALK">Перекрытый тротуар</option>
+                <option value="ROUGH_SURFACE">Плохое покрытие</option>
+                <option value="OTHER">Другое</option>
+              </select>
+            </label>
+
+            <fieldset class="field-group">
+              <legend>Состояние</legend>
+              <div class="segmented-control">
+                <label><input type="radio" name="finding" value="PRESENT" checked /><span>Присутствует</span></label>
+                <label><input type="radio" name="finding" value="ABSENT" /><span>Уже отсутствует</span></label>
+              </div>
+            </fieldset>
+
+            <fieldset id="restriction-field" class="field-group">
+              <legend>Как влияет на проход</legend>
+              <div class="choice-grid">
+                <label><input type="radio" name="restrictionType" value="BLOCKED" /><span><b>Прохода нет</b><small>Обойти по этому месту невозможно</small></span></label>
+                <label><input type="radio" name="restrictionType" value="DIFFICULT" /><span><b>Проход затруднён</b><small>Можно пройти с усилием или помощью</small></span></label>
+                <label><input type="radio" name="restrictionType" value="RESTRICTED" /><span><b>Подходит не всем</b><small>Ограничение зависит от возможностей человека</small></span></label>
+              </div>
+            </fieldset>
+
+            <div class="coordinate-grid">
+              <label class="field">
+                <span>Название места</span>
+                <input id="place-name" name="placeName" type="text" maxlength="160" placeholder="Необязательно" />
+              </label>
+              <label class="field">
+                <span>Уровень</span>
+                <input id="level-ref" name="levelRef" type="text" maxlength="40" placeholder="земля, −1, платформа 2" />
+              </label>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="section-heading">
+              <span class="step-number">3</span>
+              <div>
+                <h3>Фотографии</h3>
+                <p>Для готовой записи нужна хотя бы одна фотография. Лучше снять общий план и деталь.</p>
+              </div>
+            </div>
+
+            <label class="photo-button">
+              <input id="photo-input" type="file" accept="image/*" capture="environment" multiple />
+              <span aria-hidden="true">＋</span>
+              <b>Добавить фото</b>
+              <small>Камера или галерея</small>
+            </label>
+            <div id="photo-list" class="photo-list" aria-live="polite"></div>
+            <p id="photo-size" class="muted"></p>
+          </section>
+
+          <section class="card">
+            <div class="section-heading">
+              <span class="step-number">4</span>
+              <div>
+                <h3>Дополнительные сведения</h3>
+                <p>Измерения необязательны. Не оценивайте число, если измерить не удалось.</p>
+              </div>
+            </div>
+
+            <div class="measurement-grid">
+              <label class="field"><span>Высота, см</span><input id="height-cm" type="number" inputmode="decimal" min="0" step="0.1" /></label>
+              <label class="field"><span>Ширина прохода, см</span><input id="width-cm" type="number" inputmode="decimal" min="0" step="0.1" /></label>
+              <label class="field"><span>Уклон, %</span><input id="slope-percent" type="number" inputmode="decimal" min="0" step="0.1" /></label>
+            </div>
+
+            <label class="field">
+              <span>Комментарий</span>
+              <textarea id="comment" name="comment" rows="4" maxlength="1000" placeholder="Что важно увидеть при проверке?"></textarea>
+            </label>
+          </section>
+
+          <div class="form-actions">
+            <button id="save-draft" class="button button-secondary" type="button">Сохранить черновик</button>
+            <button id="save-ready" class="button button-primary" type="submit">Готово к проверке</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="records-view" class="view" aria-labelledby="records-title" hidden>
+        <div class="intro-row">
+          <div>
+            <h2 id="records-title">Сохранённые наблюдения</h2>
+            <p class="muted">Все данные находятся только в этом браузере, пока вы не экспортировали копию.</p>
+          </div>
+          <button id="new-record" class="button button-primary button-small" type="button">＋ Новое</button>
+        </div>
+
+        <div class="storage-card">
+          <div>
+            <b id="record-count">0 наблюдений</b>
+            <span id="storage-estimate" class="muted">Оцениваем занятое место</span>
+          </div>
+          <span class="local-only">На устройстве</span>
+        </div>
+
+        <div class="export-panel card">
+          <h3>Резервная копия</h3>
+          <p>JSON содержит записи и фотографии. GeoJSON и CSV удобны для карты и таблицы, но не включают сами файлы фотографий.</p>
+          <div class="button-row">
+            <button id="export-backup" class="button button-primary" type="button">Скачать полную копию</button>
+            <button id="export-geojson" class="button button-secondary" type="button">GeoJSON</button>
+            <button id="export-csv" class="button button-secondary" type="button">CSV</button>
+          </div>
+          <label class="import-button">
+            <input id="import-backup" type="file" accept="application/json,.json" />
+            Восстановить из JSON
+          </label>
+        </div>
+
+        <div id="records-list" class="records-list"></div>
+        <div id="records-empty" class="empty-state">
+          <div aria-hidden="true">⌖</div>
+          <h3>Пока нет наблюдений</h3>
+          <p>Создайте первую запись перед выходом, чтобы проверить камеру и геолокацию.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Основная навигация">
+      <button class="nav-item is-active" data-view="collector-view" type="button"><span aria-hidden="true">＋</span><b>Собрать</b></button>
+      <button class="nav-item" data-view="records-view" type="button"><span aria-hidden="true">▤</span><b>Наблюдения</b><em id="nav-count">0</em></button>
+    </nav>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
