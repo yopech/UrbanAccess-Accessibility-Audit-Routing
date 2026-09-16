@@ -1,10 +1,10 @@
 # Domain Model
 
-Версия: 14 сентября 2026. Согласована с [требованиями](03-requirements.md), [словарём](04-domain-glossary.md) и [ERD](06-erd.md). Политика давности использует рабочий вариант из [ADR-001](adr/ADR-001-freshness.md); числовые интервалы ещё предлагаются для проверки в поле.
+Версия: 17 сентября 2026. Согласована с [требованиями](03-requirements.md), [словарём](04-domain-glossary.md), [ERD](06-erd.md) и [полевым протоколом](08-field-protocol.md). Политика давности использует рабочий вариант из [ADR-001](adr/ADR-001-freshness.md); числовые интервалы ещё предлагаются для проверки в поле.
 
 ## 1. Основной поток
 
-Пользователь создаёт Observation с точкой, типом, finding, контекстом и фото. Система сопоставляет его с Barrier. Подтверждённое локальное влияние связывает Barrier и Pedestrian Edge через **Accessibility Impact**. Accessibility Assessment рассчитывает доступность ребра для Mobility Profile, после чего маршрутизатор строит Route.
+Пользователь создаёт Observation с точкой, оценкой самостоятельного прохода, альтернативой, finding, контекстом и фото; тип физической причины необязателен. Система сопоставляет его с Barrier. Подтверждённое локальное влияние связывает Barrier и Pedestrian Edge через **Accessibility Impact**. Accessibility Assessment рассчитывает доступность ребра для Mobility Profile, после чего маршрутизатор строит Route.
 
 В документации используется только Accessibility Impact; имя класса — `AccessibilityImpact`, таблица — `accessibility_impacts`.
 
@@ -13,7 +13,7 @@
 | Объект | Назначение | Основные данные |
 |---|---|---|
 | User | Автор наблюдения, модератор или администратор | id, username, role, created_at |
-| Observation | Фиксация конкретного места и времени; состояние обработки отделено от исходных фактов | user_id, barrier_id?, target_barrier_id?, location, position_source, device_location?, device_accuracy_m?, finding, barrier_type, restriction_type?, context_type, place_name?, level_ref?, location_description?, observed_at, created_at, status, moderation_required, supersedes_observation_id? |
+| Observation | Фиксация конкретного места и времени; состояние обработки отделено от исходных фактов | user_id, barrier_id?, target_barrier_id?, location, position_source, device_location?, device_accuracy_m?, finding, barrier_type?, restriction_type?, alternative_access?, context_type, place_name?, level_ref?, location_description?, observed_at, created_at, status, moderation_required, supersedes_observation_id? |
 | Media | Фотография наблюдения | observation_id, storage_key, mime_type, file_size, upload_status, created_at |
 | Measurement | Необязательное измерение или оценка | observation_id, recorded_by, parameter_type, value, unit, source, confidence, created_at |
 | Barrier | Идентифицированное ограничение, объединяющее наблюдения | barrier_type, context_type, permanence, status, recheck_reasons, recheck_interval_days, first_observed_at, last_observed_at, last_confirmed_at?, last_verified_at? |
@@ -39,9 +39,10 @@ Barrier не имеет обязательной геометрии физиче
 
 ## 4. Справочники и производные результаты
 
-- Barrier Type: CURB, STAIRS, FENCE, GATE, NARROW_SIDEWALK, BLOCKED_SIDEWALK, ROUGH_SURFACE, OTHER.
+- Barrier Type: CURB, STAIRS, FENCE, GATE, NARROW_SIDEWALK, BLOCKED_SIDEWALK, ROUGH_SURFACE, OTHER; необязательное объяснение физической причины.
 - Finding: PRESENT / ABSENT. ABSENT относится к ранее известному ограничению; до проверки цель может храниться в target_barrier_id, а принятая связь barrier_id оставаться NULL.
-- Restriction Type: BLOCKED / DIFFICULT / RESTRICTED для PRESENT; NULL для ABSENT. Это описание пользователя, которое не задаёт одинаковую доступность всем профилям.
+- Restriction Type: BLOCKED / DIFFICULT / RESTRICTED для PRESENT; NULL для ABSENT. Это первичная оценка самостоятельного прохода, которая не задаёт одинаковую доступность всем профилям. RESTRICTED — нормальный ожидаемый результат.
+- Alternative Access: NONE / NEARBY / DETOUR / ASSISTED / UNKNOWN для PRESENT; NULL для ABSENT. Описывает альтернативу, но не отменяет исходное ограничение.
 - Impact Type: BLOCKS / NARROWS / PENALIZES / STAIRS / SURFACE_DEGRADATION. BLOCKS — установленная полная блокировка, STAIRS — наличие лестницы с профильной оценкой.
 - Measurement Source: VISUAL_ESTIMATE / MANUAL_MEASUREMENT / MODERATOR_MEASUREMENT; Confidence: LOW / MEDIUM / HIGH.
 - Permanence: PERMANENT / TEMPORARY / UNKNOWN. Тип препятствия предлагает значение, модератор может уточнить; FENCE не обязательно временный.
@@ -122,7 +123,7 @@ Verification: APPROVE_NEW_BARRIER / LINK_TO_EXISTING_BARRIER / CONFIRM_ABSENCE /
 
 ## 9. Граница уличного графа
 
-Автоматическое расширение разрешено только STREET. Остановка или отдельный подземный переход могут быть вручную связаны с существующим подходящим ребром после проверки контекста и уровня. Элементы метро, ЖД-станций и платформ собираются без уличного Accessibility Impact. Indoor/transit routing в MVP не реализуется.
+Автоматическое расширение разрешено только STREET. Остановка или отдельный подземный переход могут быть вручную связаны с существующим подходящим ребром после проверки контекста и уровня. Подземный или надземный переход описывается отдельными Observation в тех частях, где условия различаются: вход, внутренний путь, выход. Элементы метро, ЖД-станций и платформ собираются без уличного Accessibility Impact. Indoor/transit routing в MVP не реализуется.
 
 ## 10. Проверка модели перед реализацией
 

@@ -100,10 +100,30 @@
             <div class="section-heading">
               <span class="step-number">2</span>
               <div>
-                <h3>Что обнаружено</h3>
-                <p>Выберите наиболее близкое описание.</p>
+                <h3>Как это влияет на самостоятельный проход</h3>
+                <p>Сначала оцените результат, затем при желании опишите причину.</p>
               </div>
             </div>
+
+            <fieldset id="restriction-field" class="field-group">
+              <legend>Можно ли пройти самостоятельно?</legend>
+              <div class="choice-grid">
+                <label><input type="radio" name="restrictionType" value="BLOCKED" /><span><b>Нет</b><small>В отмеченной точке нет самостоятельного прохода</small></span></label>
+                <label><input type="radio" name="restrictionType" value="DIFFICULT" /><span><b>Да, но с трудом</b><small>Нужно значительное усилие, есть риск или нужна помощь</small></span></label>
+                <label><input type="radio" name="restrictionType" value="RESTRICTED" /><span><b>Да, но не для всех</b><small>Возможность пройти зависит от профиля мобильности</small></span></label>
+              </div>
+            </fieldset>
+
+            <fieldset id="alternative-field" class="field-group">
+              <legend>Есть подходящий альтернативный проход?</legend>
+              <div class="choice-grid">
+                <label><input type="radio" name="alternativeAccess" value="NONE" /><span><b>Нет</b><small>Подходящего варианта не видно</small></span></label>
+                <label><input type="radio" name="alternativeAccess" value="NEARBY" /><span><b>Да, рядом</b><small>Можно пройти без заметного обхода</small></span></label>
+                <label><input type="radio" name="alternativeAccess" value="DETOUR" /><span><b>Да, с обходом</b><small>Нужен другой вход или участок маршрута</small></span></label>
+                <label><input type="radio" name="alternativeAccess" value="ASSISTED" /><span><b>Только с помощью или по времени</b><small>Например, лифт по звонку или по расписанию</small></span></label>
+                <label><input type="radio" name="alternativeAccess" value="UNKNOWN" /><span><b>Не знаю</b><small>Не удалось проверить</small></span></label>
+              </div>
+            </fieldset>
 
             <label class="field">
               <span>Контекст</span>
@@ -118,9 +138,9 @@
             </label>
 
             <label class="field">
-              <span>Тип препятствия</span>
-              <select id="barrier-type" name="barrierType" required>
-                <option value="">Выберите тип</option>
+              <span>Что создаёт ограничение? <small>Необязательно</small></span>
+              <select id="barrier-type" name="barrierType">
+                <option value="">Не уверен или это не важно</option>
                 <option value="CURB">Бордюр</option>
                 <option value="STAIRS">Лестница</option>
                 <option value="FENCE">Ограждение</option>
@@ -133,19 +153,10 @@
             </label>
 
             <fieldset class="field-group">
-              <legend>Состояние</legend>
+              <legend>Состояние замеченной проблемы</legend>
               <div class="segmented-control">
-                <label><input type="radio" name="finding" value="PRESENT" checked /><span>Присутствует</span></label>
+                <label><input type="radio" name="finding" value="PRESENT" checked /><span>Сейчас есть</span></label>
                 <label><input type="radio" name="finding" value="ABSENT" /><span>Уже отсутствует</span></label>
-              </div>
-            </fieldset>
-
-            <fieldset id="restriction-field" class="field-group">
-              <legend>Как влияет на проход</legend>
-              <div class="choice-grid">
-                <label><input type="radio" name="restrictionType" value="BLOCKED" /><span><b>Прохода нет</b><small>Обойти по этому месту невозможно</small></span></label>
-                <label><input type="radio" name="restrictionType" value="DIFFICULT" /><span><b>Проход затруднён</b><small>Можно пройти с усилием или помощью</small></span></label>
-                <label><input type="radio" name="restrictionType" value="RESTRICTED" /><span><b>Подходит не всем</b><small>Ограничение зависит от возможностей человека</small></span></label>
               </div>
             </fieldset>
 

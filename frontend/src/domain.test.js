@@ -15,6 +15,7 @@ function completeObservation(overrides = {}) {
     barrierType: "CURB",
     finding: "PRESENT",
     restrictionType: "RESTRICTED",
+    alternativeAccess: "NEARBY",
     measurements: { heightCm: 12, availableWidthCm: null, slopePercent: null },
     ...overrides,
   };
@@ -31,14 +32,25 @@ test("готовая запись требует координаты и фот�
   assert(Boolean(errors.photos));
 });
 
-test("PRESENT требует характер ограничения", () => {
+test("PRESENT требует оценку самостоятельного прохода", () => {
   const errors = validateObservation(completeObservation({ restrictionType: null }), 1, true, new Date("2026-09-15T12:00:00.000Z"));
   assert(Boolean(errors.restrictionType));
 });
 
+test("PRESENT требует сведения об альтернативном проходе", () => {
+  const errors = validateObservation(completeObservation({ alternativeAccess: null }), 1, true, new Date("2026-09-15T12:00:00.000Z"));
+  assert(Boolean(errors.alternativeAccess));
+});
+
 test("ABSENT не требует характер ограничения", () => {
-  const errors = validateObservation(completeObservation({ finding: "ABSENT", restrictionType: null }), 1, true, new Date("2026-09-15T12:00:00.000Z"));
+  const errors = validateObservation(completeObservation({ finding: "ABSENT", restrictionType: null, alternativeAccess: null }), 1, true, new Date("2026-09-15T12:00:00.000Z"));
   assert(!errors.restrictionType);
+  assert(!errors.alternativeAccess);
+});
+
+test("готовая запись допускает неизвестную физическую причину", () => {
+  const errors = validateObservation(completeObservation({ barrierType: null }), 1, true, new Date("2026-09-15T12:00:00.000Z"));
+  assert(!errors.barrierType, JSON.stringify(errors));
 });
 
 test("черновик можно сохранить без фото и координат", () => {

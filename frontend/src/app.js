@@ -1,4 +1,5 @@
 import {
+  ALTERNATIVE_ACCESS_LABELS,
   BARRIER_LABELS,
   CONTEXT_LABELS,
   FINDING_LABELS,
@@ -77,9 +78,12 @@ function revokeUrls(urls) {
 function setFindingVisibility() {
   const finding = form.elements.finding.value;
   const restriction = byId("restriction-field");
+  const alternative = byId("alternative-field");
   restriction.hidden = finding === "ABSENT";
+  alternative.hidden = finding === "ABSENT";
   if (finding === "ABSENT") {
     document.querySelectorAll('input[name="restrictionType"]').forEach((input) => { input.checked = false; });
+    document.querySelectorAll('input[name="alternativeAccess"]').forEach((input) => { input.checked = false; });
   }
 }
 
@@ -134,9 +138,10 @@ function readObservation() {
     deviceLongitude: numberOrNull(byId("device-longitude").value),
     deviceAccuracyM: numberOrNull(byId("device-accuracy").value),
     contextType: byId("context-type").value,
-    barrierType: byId("barrier-type").value,
+    barrierType: byId("barrier-type").value || null,
     finding,
     restrictionType: finding === "PRESENT" ? form.elements.restrictionType.value || null : null,
+    alternativeAccess: finding === "PRESENT" ? form.elements.alternativeAccess.value || null : null,
     placeName: byId("place-name").value.trim(),
     levelRef: byId("level-ref").value.trim(),
     locationDescription: byId("location-description").value.trim(),
@@ -156,8 +161,8 @@ function displayErrors(errors) {
     observedAt: [byId("observed-at")],
     location: [byId("latitude"), byId("longitude")],
     contextType: [byId("context-type")],
-    barrierType: [byId("barrier-type")],
     restrictionType: [...document.querySelectorAll('input[name="restrictionType"]')].map((input) => input.nextElementSibling),
+    alternativeAccess: [...document.querySelectorAll('input[name="alternativeAccess"]')].map((input) => input.nextElementSibling),
     photos: [document.querySelector(".photo-button")],
     heightCm: [byId("height-cm")],
     availableWidthCm: [byId("width-cm")],
@@ -436,6 +441,8 @@ function fillForm(record, photos) {
   if (finding) finding.checked = true;
   const restriction = document.querySelector(`input[name="restrictionType"][value="${record.restrictionType}"]`);
   if (restriction) restriction.checked = true;
+  const alternative = document.querySelector(`input[name="alternativeAccess"][value="${record.alternativeAccess}"]`);
+  if (alternative) alternative.checked = true;
   byId("place-name").value = record.placeName || "";
   byId("level-ref").value = record.levelRef || "";
   byId("location-description").value = record.locationDescription || "";
@@ -483,7 +490,7 @@ function createRecordCard(record, photos) {
   const top = document.createElement("div");
   top.className = "record-top";
   const heading = document.createElement("h3");
-  heading.textContent = BARRIER_LABELS[record.barrierType] || "Черновик без типа";
+  heading.textContent = BARRIER_LABELS[record.barrierType] || "Ограничение прохода";
   const status = document.createElement("em");
   status.className = `record-status ${record.status === "READY" ? "ready" : ""}`;
   status.textContent = record.status === "READY" ? "Готово" : "Черновик";
@@ -493,7 +500,9 @@ function createRecordCard(record, photos) {
   meta.className = "record-meta";
   const context = CONTEXT_LABELS[record.contextType] || "Контекст не указан";
   const finding = FINDING_LABELS[record.finding] || "Состояние не указано";
-  meta.textContent = `${formatObservationDate(record.observedAt)} · ${context} · ${finding}`;
+  const restriction = RESTRICTION_LABELS[record.restrictionType];
+  const alternative = ALTERNATIVE_ACCESS_LABELS[record.alternativeAccess];
+  meta.textContent = [formatObservationDate(record.observedAt), context, restriction || finding, alternative].filter(Boolean).join(" · ");
 
   const actions = document.createElement("div");
   actions.className = "record-actions";

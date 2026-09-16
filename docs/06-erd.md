@@ -1,6 +1,6 @@
 # ERD — UrbanAccess
 
-Версия: 14 сентября 2026. Логическая реляционная схема для PostgreSQL/PostGIS. Основание: [Requirements](03-requirements.md), [Domain Model](05-domain-model.md), [политика повторной проверки](adr/ADR-001-freshness.md).
+Версия: 17 сентября 2026. Логическая реляционная схема для PostgreSQL/PostGIS. Основание: [Requirements](03-requirements.md), [Domain Model](05-domain-model.md), [полевой протокол](08-field-protocol.md), [политика повторной проверки](adr/ADR-001-freshness.md).
 
 Это проект таблиц и ограничений, не выполненная миграция. Формулы весов, числовые допуски сопоставления и интервалы повторной проверки требуют калибровки; неизвестное правило не даёт права автоматически менять граф.
 
@@ -74,6 +74,7 @@ erDiagram
         uuid supersedes_observation_id FK
         text barrier_type_code FK
         text restriction_type_code FK
+        text alternative_access
         geometry location
         geometry device_location
         text finding
@@ -218,9 +219,10 @@ impact_types: BLOCKS / NARROWS / PENALIZES / STAIRS / SURFACE_DEGRADATION.
 | device_location | geometry(Point,4326)? | Исходная позиция устройства |
 | device_accuracy_m | numeric? | >= 0, только при device_location |
 | device_captured_at | timestamptz? | Только при device_location |
-| barrier_type_code | text | FK barrier_types.code |
+| barrier_type_code | text? | FK barrier_types.code; необязательное объяснение причины |
 | finding | text | PRESENT / ABSENT |
 | restriction_type_code | text? | FK restriction_types.code; NN при PRESENT, NULL при ABSENT |
+| alternative_access | text? | NONE / NEARBY / DETOUR / ASSISTED / UNKNOWN; NN при PRESENT, NULL при ABSENT |
 | context_type | text | Перечень контекстов в §9 |
 | place_name | text? | Название станции/места |
 | level_ref | text? | Читаемое обозначение уровня; отсутствие не равно ground |
@@ -232,6 +234,8 @@ impact_types: BLOCKS / NARROWS / PENALIZES / STAIRS / SURFACE_DEGRADATION.
 | created_at | timestamptz | Время создания сервером |
 
 CHECK: APPROVED/LINKED требуют barrier_id. Другие статусы могут сохранить прежнюю связь при повторном разборе — связь не равна действующему свидетельству. Для GPS требуется device_location и совпадение итоговой точки с принятой GPS-точкой; для MANUAL допускается отсутствие GPS.
+
+CHECK: при `finding = PRESENT` обязательны `restriction_type_code` и `alternative_access`; при `finding = ABSENT` оба поля NULL. `barrier_type_code` допускает NULL до решения модератора, который при создании Barrier классифицирует причину, если она установлена.
 
 Если одновременно заданы `barrier_id` и `target_barrier_id`, после принятия решения они должны указывать на один Barrier; до решения `target_barrier_id` не считается принятой связью. При переназначении сохраняется прежняя цель в событиях и аудите, затем поля приводятся к согласованному состоянию одной транзакцией.
 

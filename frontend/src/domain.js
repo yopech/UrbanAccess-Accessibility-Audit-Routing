@@ -19,9 +19,17 @@ export const CONTEXT_LABELS = {
 };
 
 export const RESTRICTION_LABELS = {
-  BLOCKED: "Прохода нет",
-  DIFFICULT: "Проход затруднён",
-  RESTRICTED: "Подходит не всем",
+  BLOCKED: "Самостоятельного прохода нет",
+  DIFFICULT: "Самостоятельный проход затруднён",
+  RESTRICTED: "Самостоятельный проход не для всех",
+};
+
+export const ALTERNATIVE_ACCESS_LABELS = {
+  NONE: "Нет альтернативы",
+  NEARBY: "Альтернатива рядом",
+  DETOUR: "Альтернатива с обходом",
+  ASSISTED: "Альтернатива с помощью или по времени",
+  UNKNOWN: "Альтернатива не проверена",
 };
 
 export const FINDING_LABELS = {
@@ -54,8 +62,8 @@ export function validateObservation(observation, photoCount, ready, now = new Da
         !Number.isFinite(observation.longitude) || observation.longitude < -180 || observation.longitude > 180) {
       errors.location = "Получите GPS или укажите корректные координаты.";
     }
-    if (!BARRIER_LABELS[observation.barrierType]) {
-      errors.barrierType = "Выберите тип препятствия.";
+    if (observation.barrierType !== null && observation.barrierType !== undefined && !BARRIER_LABELS[observation.barrierType]) {
+      errors.barrierType = "Укажите известный тип ограничения или оставьте поле пустым.";
     }
     if (!CONTEXT_LABELS[observation.contextType]) {
       errors.contextType = "Выберите контекст.";
@@ -64,7 +72,10 @@ export function validateObservation(observation, photoCount, ready, now = new Da
       errors.finding = "Укажите состояние препятствия.";
     }
     if (observation.finding === "PRESENT" && !RESTRICTION_LABELS[observation.restrictionType]) {
-      errors.restrictionType = "Укажите, как препятствие влияет на проход.";
+      errors.restrictionType = "Укажите, можно ли пройти самостоятельно.";
+    }
+    if (observation.finding === "PRESENT" && !ALTERNATIVE_ACCESS_LABELS[observation.alternativeAccess]) {
+      errors.alternativeAccess = "Укажите, есть ли подходящий альтернативный проход.";
     }
     if (photoCount < 1) {
       errors.photos = "Добавьте хотя бы одну фотографию.";
@@ -102,7 +113,7 @@ export function observationToGeoJSONFeature(observation) {
 export function observationsToCSV(observations) {
   const columns = [
     "id", "status", "observedAt", "latitude", "longitude", "positionSource", "deviceAccuracyM",
-    "contextType", "barrierType", "finding", "restrictionType", "placeName", "levelRef",
+    "contextType", "barrierType", "finding", "restrictionType", "alternativeAccess", "placeName", "levelRef",
     "locationDescription", "heightCm", "availableWidthCm", "slopePercent", "comment", "photoCount",
   ];
   const rows = observations.map((item) => ({

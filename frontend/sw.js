@@ -1,4 +1,4 @@
-const SHELL_CACHE = "urbanaccess-shell-v4";
+const SHELL_CACHE = "urbanaccess-shell-v5";
 const TILE_CACHE = "urbanaccess-map-tiles-v1";
 const SHELL_FILES = [
   "./",
