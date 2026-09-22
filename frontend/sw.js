@@ -1,4 +1,4 @@
-const SHELL_CACHE = "urbanaccess-shell-v6-ngo-pilot";
+const SHELL_CACHE = "urbanaccess-shell-v6-ngo-pilot-1";
 const TILE_CACHE = "urbanaccess-map-tiles-v1";
 const SHELL_FILES = [
   "./",

@@ -17,12 +17,19 @@ function sortKeys(value) {
 
 export function validateProject(project) {
   const errors = [];
+  if (!project || typeof project !== "object") return ["Некорректное задание."];
   for (const [key, label] of [["title", "название"], ["originDescription", "точку отправления"], ["destinationDescription", "точку назначения"], ["targetRequirements", "требования к проходу"], ["objective", "цель проверки"], ["coordinator", "имя координатора"]]) {
     if (!String(project[key] || "").trim()) errors.push(`Укажите ${label}.`);
   }
   if (!PROJECT_STATUSES[project.status]) errors.push("Неизвестный статус проекта.");
-  if (!Array.isArray(project.parts) || !project.parts.length || project.parts.some((p) => !p.id || !p.label?.trim() || !COVERAGE_STATUSES[p.coverage])) errors.push("Добавьте части маршрута с понятными названиями.");
-  if (project.parts && new Set(project.parts.map((p) => p.id)).size !== project.parts.length) errors.push("Идентификаторы частей не должны повторяться.");
+  if (!Array.isArray(project.parts) || !project.parts.length || project.parts.some((p) => !p || typeof p.id !== "string" || !p.id || typeof p.label !== "string" || !p.label.trim() || !Object.hasOwn(COVERAGE_STATUSES, p.coverage))) errors.push("Добавьте части маршрута с понятными названиями.");
+  else {
+    if (new Set(project.parts.map((p) => p.id)).size !== project.parts.length) errors.push("Идентификаторы частей не должны повторяться.");
+    if (project.parts.some((p) => p.checkedAt && !Number.isFinite(Date.parse(p.checkedAt)) || p.coverage === "CHECKED" && (!p.checkedAt || !p.checkedBy || !p.coverageNote))) errors.push("Для обследованной части нужны дата, проверяющий и основание.");
+  }
+  for (const field of ["conclusionHistory", "pairResolutions", "importVariants"]) {
+    if (project[field] != null && (!Array.isArray(project[field]) || project[field].some((item) => !item || typeof item !== "object" || Array.isArray(item)))) errors.push("Повреждена история проекта.");
+  }
   return errors;
 }
 

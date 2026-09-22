@@ -31,7 +31,7 @@ export async function prepareImport(bundle, snapshot) {
   const projectMap = new Map(snapshot.projects.map((p) => [p.id, p]));
   const incomingIds = new Set();
   for (const source of bundle.projects || []) {
-    if (!safeId(source.id) || incomingIds.has(source.id) || validateProject(source).length) throw new Error("В файле некорректный или повторяющийся проект.");
+    if (!source || !safeId(source.id) || incomingIds.has(source.id) || validateProject(source).length) throw new Error("В файле некорректный или повторяющийся проект.");
     incomingIds.add(source.id);
     const old = projectMap.get(source.id);
     if (!old) { plan.projects.push(source); projectMap.set(source.id, source); }
@@ -58,6 +58,8 @@ export async function prepareImport(bundle, snapshot) {
     if (source.reviewStatus && !REVIEW_STATUSES[source.reviewStatus] || source.experienceSource && !EXPERIENCE_SOURCES[source.experienceSource]) throw new Error("Неизвестный источник оценки или решение координатора.");
     if (project && Boolean(source.isDemo) !== Boolean(project.isDemo)) throw new Error("Реальные и учебные записи нельзя смешивать в одном маршруте.");
     for (const key of ["reviewHistory", "importReceipts"]) if (source[key] && !Array.isArray(source[key])) throw new Error("Некорректная история наблюдения.");
+    if (source.reviewHistory?.some((entry) => !entry || typeof entry !== "object" || !Object.hasOwn(REVIEW_STATUSES, entry.status) || typeof entry.comment !== "string" || typeof entry.reviewer !== "string" || !Number.isFinite(Date.parse(entry.at)))) throw new Error("Повреждена история решений наблюдения.");
+    if (source.importReceipts?.some((receipt) => typeof receipt !== "string")) throw new Error("Повреждена история загрузки записи.");
     if (source.routePartId && project && !project.parts.some((p) => p.id === source.routePartId)) throw new Error("Части маршрута в файле отличаются. Сначала согласуйте одинаковое задание.");
     const photos = item.photos.map((photo) => { const blob = imageBlob(photo.dataURL); return { name: String(photo.name || "Фото"), blob, type: blob.type, size: blob.size }; });
     if (source.reviewStatus === "ACCEPTED" && (!project || source.experienceSource === "ASSUMPTION" || Object.keys(validatePilotObservation(source, photos.length, true, project)).length)) throw new Error("Принятая запись не содержит обязательных доказательств. Уточните исходный файл.");

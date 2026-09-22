@@ -49,3 +49,8 @@ test("P-14: изменённая инструкция не теряется пр
   const initial = apply(await prepareImport(bundle(), empty())); const plan = await prepareImport(bundle([], [project({ instructions: "Проверить другой вход" })]), initial);
   assert.equal(plan.projects[0].importVariants[0].project.instructions, "Проверить другой вход");
 });
+test("P-15: повреждённая вложенная история не попадает в хранилище", async () => {
+  await assert.rejects(prepareImport(bundle([record({ reviewHistory: [null] })]), empty()));
+  await assert.rejects(prepareImport(bundle([], [project({ pairResolutions: [null] })]), empty()));
+  await assert.rejects(prepareImport(bundle([], [project({ parts: [{ id: "part", label: "Вход", coverage: "CHECKED", checkedAt: "bad" }] })]), empty()));
+});
