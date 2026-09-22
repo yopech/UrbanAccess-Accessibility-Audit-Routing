@@ -4,23 +4,66 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#12372a" />
-    <meta name="description" content="Полевой сбор наблюдений о городской доступности" />
+    <meta name="description" content="Совместная проверка конкретных маршрутов" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./src/styles.css" />
-    <title>UrbanAccess — полевой сбор</title>
+    <title>UrbanAccess — проверка маршрутов</title>
   </head>
   <body>
     <header class="app-header">
       <div>
         <p class="eyebrow">UrbanAccess</p>
-        <h1>Полевые наблюдения</h1>
+        <h1>Проверяем путь вместе</h1>
       </div>
       <div id="connection-badge" class="status-badge" aria-live="polite">Проверяем связь</div>
     </header>
 
     <main>
-      <section id="collector-view" class="view" aria-labelledby="collector-title">
+      <p class="privacy-note">Прототип для обсуждения пилота. Записи и фото остаются в этом браузере. Передать их можно файлом.</p>
+      <div id="global-error" class="error-summary" role="alert" hidden></div>
+      <section id="project-view" class="view" aria-labelledby="project-title">
+        <div id="welcome" class="welcome">
+          <p class="eyebrow">Один маршрут. Общая проверка.</p>
+          <h2>От «можно ли пройти?»<br>к понятному ответу.</h2>
+          <p>Выберите важный для вашего сообщества путь. Соберите наблюдения, разберите спорные места и подготовьте отчёт.</p>
+          <div class="button-row"><button id="open-demo" class="button button-primary">Посмотреть демо</button><button id="welcome-create" class="button button-secondary">Создать проверку</button></div>
+          <ol class="steps"><li>Задать маршрут</li><li>Проверить на месте</li><li>Поделиться результатом</li></ol>
+        </div>
+        <div class="intro-row">
+          <div><h2 id="project-title">Маршруты</h2><p class="muted">Проверки на этом устройстве</p></div>
+          <button id="new-project" class="button button-secondary button-small">＋ Создать</button>
+        </div>
+        <label class="field"><span>Текущая проверка</span><select id="project-select"><option value="">Выберите маршрут</option></select></label>
+        <div id="project-detail"></div>
+        <form id="project-form" class="card" hidden>
+          <h3 id="project-form-title">Новая проверка</h3>
+          <input id="project-id" type="hidden">
+          <label class="field"><span>Название *</span><input id="project-name" required maxlength="160" placeholder="От остановки до нашего центра"></label>
+          <label class="field"><span>Организация или сообщество</span><input id="partner-name" maxlength="160" placeholder="Можно оставить пустым до знакомства"></label>
+          <label class="field"><span>Координатор: имя или псевдоним *</span><input id="coordinator" required maxlength="100"></label>
+          <div class="coordinate-grid">
+            <label class="field"><span>Откуда *</span><input id="origin" required maxlength="240" placeholder="Остановка, конкретный выход"></label>
+            <label class="field"><span>Куда *</span><input id="destination" required maxlength="240" placeholder="Здание и конкретный вход"></label>
+          </div>
+          <label class="field"><span>Для кого и какие условия важны *</span><textarea id="target-requirements" required maxlength="1500" rows="3" placeholder="Например: самостоятельный проезд на ручной коляске; без ступеней и помощи сопровождающего"></textarea></label>
+          <label class="field"><span>Что хотим выяснить *</span><textarea id="objective" required maxlength="1000" rows="2" placeholder="Как попасть от остановки ко входу и где потребуется обход"></textarea></label>
+          <label class="field"><span>Инструкция участникам</span><textarea id="instructions" maxlength="2000" rows="3" placeholder="Проверьте обе стороны перехода. Укажите вход, сторону и направление."></textarea></label>
+          <div class="coordinate-grid"><label class="field"><span>Дата выхода</span><input id="fieldwork-date" type="date"></label><label class="field"><span>Этап</span><select id="project-status"></select></label></div>
+          <label id="parts-field" class="field"><span>Части маршрута: каждая с новой строки *</span><textarea id="project-parts" rows="5" maxlength="3000"></textarea><small>Перечислите весь путь, включая переходы и вход. Отсутствие жалоб не означает, что часть обследована.</small></label>
+          <div class="button-row"><button class="button button-primary" type="submit">Сохранить маршрут</button><button id="cancel-project" class="button button-ghost" type="button">Отмена</button></div>
+        </form>
+        <details class="card exchange-panel" open><summary>Передать задание и собрать результаты</summary>
+          <p>Координатор передаёт участникам файл задания. Участник загружает его здесь, проводит проверку и возвращает файл результатов.</p>
+          <div class="button-row"><button id="export-assignment" class="button button-secondary">Скачать задание</button><button id="export-project" class="button button-secondary">Скачать результаты</button><button id="import-open" class="button button-secondary">Загрузить файл</button></div>
+          <p class="muted">Совместная работа — через файлы. Общего сервера и автоматической отправки координатору пока нет.</p>
+          <div id="import-preview" hidden></div>
+          <input id="import-backup" type="file" accept="application/json,.json" hidden>
+        </details>
+        <details class="card"><summary>Копия всех данных</summary><p>Сохраняйте копию перед сменой устройства или очисткой браузера. Она включает все проекты, прежние записи и фотографии.</p><button id="export-backup" class="button button-secondary">Скачать полную копию</button></details>
+        <div id="legacy-panel"></div>
+      </section>
+      <section id="collector-view" class="view" hidden aria-labelledby="collector-title">
         <div class="intro-row">
           <div>
             <h2 id="collector-title">Новое наблюдение</h2>
@@ -29,10 +72,18 @@
           <button id="reset-form" class="button button-ghost button-small" type="button">Очистить</button>
         </div>
 
+        <p id="collector-project" class="project-ribbon"></p>
+        <p id="collector-demo" class="notice" hidden>Учебный маршрут: точки и схемы вымышлены. Эти сведения не описывают реальную территорию.</p>
+        <p id="recheck-hint" class="notice" hidden></p>
         <div id="form-errors" class="error-summary" role="alert" hidden></div>
 
         <form id="observation-form" novalidate>
           <input id="record-id" type="hidden" />
+          <section class="card">
+            <label class="field"><span>Часть маршрута *</span><select id="route-part"></select></label>
+            <label class="field"><span>Ваше имя или псевдоним *</span><input id="reporter-alias" maxlength="100" autocomplete="nickname"></label>
+            <label class="field"><span>На чём основана оценка? *</span><select id="experience-source"><option value="">Выберите</option><option value="PERSONAL_EXPERIENCE">Прошёл сам / сама</option><option value="DIRECT_OBSERVATION">Наблюдал на месте</option><option value="ASSUMPTION">Предполагаю, нужен осмотр</option></select></label>
+          </section>
 
           <section class="card">
             <div class="section-heading">
@@ -54,7 +105,7 @@
               </button>
               <p id="location-status" class="muted" aria-live="polite">Координаты ещё не получены</p>
             </div>
-            <p class="location-help">Если точка далеко от вас, разрешите этому браузеру «точное местоположение». Неточный результат форма не подставит.</p>
+            <p class="location-help">Если точка далеко от вас, разрешите этому браузеру «точное местоположение». Неточный результат форма не подставит. Даже при хорошей точности проверьте место на карте.</p>
 
             <div class="coordinate-grid">
               <label class="field">
@@ -105,11 +156,19 @@
               </div>
             </div>
 
+            <fieldset class="field-group">
+              <legend>Есть ли ограничение в этой точке?</legend>
+              <div class="segmented-control">
+                <label><input type="radio" name="finding" value="PRESENT" checked /><span>Есть ограничение</span></label>
+                <label><input id="finding-absent" type="radio" name="finding" value="ABSENT" disabled /><span>Прежняя проблема исчезла</span></label><label><input type="radio" name="finding" value="CLEAR_PASSAGE"><span>В этой точке проход свободен</span></label>
+              </div>
+            </fieldset>
+
             <fieldset id="restriction-field" class="field-group">
               <legend>Можно ли пройти самостоятельно?</legend>
               <div class="choice-grid">
                 <label><input type="radio" name="restrictionType" value="BLOCKED" /><span><b>Нет</b><small>В отмеченной точке нет самостоятельного прохода</small></span></label>
-                <label><input type="radio" name="restrictionType" value="DIFFICULT" /><span><b>Да, но с трудом</b><small>Нужно значительное усилие, есть риск или нужна помощь</small></span></label>
+                <label><input type="radio" name="restrictionType" value="DIFFICULT" /><span><b>Да, но с трудом</b><small>Можно пройти без посторонней помощи, но со значительным усилием</small></span></label>
                 <label><input type="radio" name="restrictionType" value="RESTRICTED" /><span><b>Да, но не для всех</b><small>Возможность пройти зависит от профиля мобильности</small></span></label>
               </div>
             </fieldset>
@@ -125,6 +184,7 @@
               </div>
             </fieldset>
 
+            <label class="field"><span>Где альтернатива и как ею воспользоваться?</span><textarea id="alternative-description" rows="2" maxlength="1000" placeholder="Вход с другой стороны; обход по улице; лифт по звонку…"></textarea></label>
             <label class="field">
               <span>Контекст</span>
               <select id="context-type" name="contextType">
@@ -152,13 +212,6 @@
               </select>
             </label>
 
-            <fieldset class="field-group">
-              <legend>Состояние замеченной проблемы</legend>
-              <div class="segmented-control">
-                <label><input type="radio" name="finding" value="PRESENT" checked /><span>Сейчас есть</span></label>
-                <label><input type="radio" name="finding" value="ABSENT" /><span>Уже отсутствует</span></label>
-              </div>
-            </fieldset>
 
             <div class="coordinate-grid">
               <label class="field">
@@ -220,51 +273,23 @@
       </section>
 
       <section id="records-view" class="view" aria-labelledby="records-title" hidden>
-        <div class="intro-row">
-          <div>
-            <h2 id="records-title">Сохранённые наблюдения</h2>
-            <p class="muted">Все данные находятся только в этом браузере, пока вы не экспортировали копию.</p>
-          </div>
-          <button id="new-record" class="button button-primary button-small" type="button">＋ Новое</button>
-        </div>
-
-        <div class="storage-card">
-          <div>
-            <b id="record-count">0 наблюдений</b>
-            <span id="storage-estimate" class="muted">Оцениваем занятое место</span>
-          </div>
-          <span class="local-only">На устройстве</span>
-        </div>
-
-        <div class="export-panel card">
-          <h3>Резервная копия</h3>
-          <p>JSON содержит записи и фотографии. GeoJSON и CSV удобны для карты и таблицы, но не включают сами файлы фотографий.</p>
-          <div class="button-row">
-            <button id="export-backup" class="button button-primary" type="button">Скачать полную копию</button>
-            <button id="export-geojson" class="button button-secondary" type="button">GeoJSON</button>
-            <button id="export-csv" class="button button-secondary" type="button">CSV</button>
-          </div>
-          <label class="import-button">
-            <input id="import-backup" type="file" accept="application/json,.json" />
-            Восстановить из JSON
-          </label>
-        </div>
-
-        <div id="records-list" class="records-list"></div>
-        <div id="records-empty" class="empty-state">
-          <div aria-hidden="true">⌖</div>
-          <h3>Пока нет наблюдений</h3>
-          <p>Создайте первую запись перед выходом, чтобы проверить камеру и геолокацию.</p>
-        </div>
+        <div class="intro-row"><div><h2 id="records-title">Результаты проверки</h2><p id="results-project" class="muted"></p></div><button id="new-record" class="button button-secondary button-small">＋ Запись</button></div>
+        <div id="results-content"></div>
+      </section>
+      <section id="report-view" class="view" aria-label="Отчёт" hidden>
+        <div class="button-row report-actions"><button id="back-results" class="button button-secondary">К результатам</button><button id="print-report" class="button button-primary">Печать / PDF</button><button id="download-report" class="button button-secondary">Скачать отчёт</button></div>
+        <div id="report-content"></div>
       </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Основная навигация">
-      <button class="nav-item is-active" data-view="collector-view" type="button"><span aria-hidden="true">＋</span><b>Собрать</b></button>
-      <button class="nav-item" data-view="records-view" type="button"><span aria-hidden="true">▤</span><b>Наблюдения</b><em id="nav-count">0</em></button>
+      <button class="nav-item is-active" data-view="project-view" type="button"><span aria-hidden="true">⌁</span><b>Маршрут</b></button>
+      <button class="nav-item" data-view="collector-view" type="button"><span aria-hidden="true">＋</span><b>Собрать</b></button>
+      <button class="nav-item" data-view="records-view" type="button"><span aria-hidden="true">▤</span><b>Результаты</b><em id="nav-count">0</em></button>
     </nav>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <dialog id="photo-dialog" aria-label="Фотография наблюдения"><button id="close-photo" class="button button-secondary" autofocus>Закрыть фото</button><img id="photo-preview-image" alt="Фотография наблюдения"></dialog>
 
     <script type="module" src="./src/app.js"></script>
   </body>

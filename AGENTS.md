@@ -1,5 +1,5 @@
 Project role:
-Accessibility audit and routing prototype.
+Local route-audit pilot for NGOs and communities. Graph/routing specifications in docs/archive are historical, not the current implementation scope.
 
 Before coding:
 1. Read docs/01-problem-statement.md

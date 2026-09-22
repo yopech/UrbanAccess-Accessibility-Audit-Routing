@@ -34,7 +34,8 @@ export const ALTERNATIVE_ACCESS_LABELS = {
 
 export const FINDING_LABELS = {
   PRESENT: "Присутствует",
-  ABSENT: "Уже отсутствует",
+  ABSENT: "Прежняя проблема исчезла",
+  CLEAR_PASSAGE: "В этой точке проход свободен",
 };
 
 export function toLocalDateTimeInput(date = new Date()) {
@@ -113,6 +114,7 @@ export function observationToGeoJSONFeature(observation) {
 export function observationsToCSV(observations) {
   const columns = [
     "id", "status", "observedAt", "latitude", "longitude", "positionSource", "deviceAccuracyM",
+    "auditProjectId", "routePartId", "reporterAlias", "experienceSource", "reviewStatus", "reviewComment", "previousObservationId", "supersededById", "conflictOfId", "isDemo", "alternativeDescription",
     "contextType", "barrierType", "finding", "restrictionType", "alternativeAccess", "placeName", "levelRef",
     "locationDescription", "heightCm", "availableWidthCm", "slopePercent", "comment", "photoCount",
   ];

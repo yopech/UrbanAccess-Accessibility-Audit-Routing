@@ -1,699 +1,212 @@
-import {
-  ALTERNATIVE_ACCESS_LABELS,
-  BARRIER_LABELS,
-  CONTEXT_LABELS,
-  FINDING_LABELS,
-  RESTRICTION_LABELS,
-  downloadName,
-  formatBytes,
-  formatObservationDate,
-  numberOrNull,
-  observationToGeoJSONFeature,
-  observationsToCSV,
-  toLocalDateTimeInput,
-  validateObservation,
-} from "./domain.js";
-import {
-  deleteObservation,
-  getAllObservations,
-  getObservation,
-  getObservationPhotos,
-  openDatabase,
-  saveObservation,
-} from "./db.js";
-import {
-  LOCATION_CONFIG,
-  locationQuality,
-  normalizeGeolocationPosition,
-  pickMoreAccurateSample,
-} from "./location.js";
+import { getSnapshot, saveProject, saveRecords, applyImport, deleteObservation } from "./db.js";
+import { PROJECT_STATUSES, REVIEW_STATUSES, EXPERIENCE_SOURCES, COVERAGE_STATUSES, CONCLUSIONS, DEFAULT_PARTS, id, nowISO, validateProject, validatePilotObservation, reviewObservation, projectRecords, auditSummary, saveConclusion, supersedeRecord, updateCoverage } from "./pilot.js";
+import { FINDING_LABELS, RESTRICTION_LABELS, ALTERNATIVE_ACCESS_LABELS, CONTEXT_LABELS, toLocalDateTimeInput, observationsToCSV, observationToGeoJSONFeature, downloadName } from "./domain.js";
+import { initCollector, resetForm, fillForm, renderMap } from "./collector.js";
+import { $, esc, options, dateLabel, errorMessage } from "./ui.js";
+import { createBundle, prepareImport, readBundle, download } from "./exchange.js";
+import { renderOverview } from "./map.js";
+import { buildReport } from "./report.js";
+import { createDemo, demoPhoto } from "./demo.js";
+import { resolvePair } from "./pilot.js";
 
-const byId = (id) => document.getElementById(id);
-const form = byId("observation-form");
-const DEFAULT_MAP_CENTER = { latitude: 55.7558, longitude: 37.6176 };
-const state = {
-  photos: [],
-  previewUrls: [],
-  listUrls: [],
-  editingRecord: null,
-  mapZoom: 18,
-  locationBest: null,
-  locationSettleTimer: null,
-  locationTimeout: null,
-  locationWatchId: null,
-  toastTimer: null,
-};
-
-function makeId() {
-  return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const state = { snapshot: { projects: [], observations: [], photos: [] }, activeId: localStorage.getItem("urbanaccess-project"), view: "project-view", filter: "ALL", urls: [], importFile: null, report: null };
+const getProject = () => state.snapshot.projects.find((p) => p.id === state.activeId);
+let toastTimer;
+function notify(message) { $("toast").textContent = message; $("toast").classList.add("is-visible"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("is-visible"), 4500); }
+function fail(error) { $("global-error").textContent = errorMessage(error); $("global-error").hidden = false; $("global-error").scrollIntoView({ block: "center" }); }
+function safe(fn) { return async (event) => { $("global-error").hidden = true; const button = event?.currentTarget; if (button?.tagName === "BUTTON") button.disabled = true; try { await fn(event); } catch (error) { fail(error); } finally { if (button?.tagName === "BUTTON") button.disabled = false; } }; }
+function on(id, event, fn) { $(id)?.addEventListener(event, safe(fn)); }
+function requireProject() { const project = getProject(); if (!project) throw new Error("Сначала создайте, загрузите или выберите маршрут."); return project; }
+function selectProject(value) { state.activeId = value; localStorage.setItem("urbanaccess-project", value || ""); resetForm(); renderProjects(); renderResults(); $("nav-count").textContent = String(projectRecords(getProject(), state.snapshot.observations).length); }
+async function refresh() {
+  state.snapshot = await getSnapshot();
+  if (!getProject()) state.activeId = state.snapshot.projects[0]?.id || null;
+  renderProjects(); renderResults();
+  $("nav-count").textContent = String(projectRecords(getProject(), state.snapshot.observations).length);
+}
+function showView(view) {
+  if (["collector-view", "records-view", "report-view"].includes(view) && !getProject()) { notify("Сначала создайте маршрут или откройте демо."); view = "project-view"; }
+  state.view = view;
+  document.querySelectorAll(".view").forEach((el) => { el.hidden = el.id !== view; });
+  document.querySelectorAll(".nav-item").forEach((el) => { const active = el.dataset.view === view || view === "report-view" && el.dataset.view === "records-view"; el.classList.toggle("is-active", active); el.setAttribute("aria-current", active ? "page" : "false"); });
+  document.body.classList.toggle("collector-active", view === "collector-view");
+  document.body.classList.toggle("report-active", view === "report-view");
+  if (view === "collector-view") requestAnimationFrame(renderMap);
+  if (view === "records-view") { renderResults(); requestAnimationFrame(drawMap); }
+  window.scrollTo({ top: 0 });
 }
 
-function showToast(message) {
-  const toast = byId("toast");
-  toast.textContent = message;
-  toast.classList.add("is-visible");
-  clearTimeout(state.toastTimer);
-  state.toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2600);
+function renderProjects() {
+  const p = getProject();
+  $("project-select").innerHTML = '<option value="">Выберите маршрут</option>' + state.snapshot.projects.map((x) => `<option value="${esc(x.id)}" ${x.id === p?.id ? "selected" : ""}>${esc(x.title)}</option>`).join("");
+  $("welcome").hidden = state.snapshot.projects.length > 0;
+  $("export-assignment").disabled = $("export-project").disabled = !p;
+  $("project-detail").innerHTML = p ? `<article class="card project-card">
+    <div class="eyebrow">${p.isDemo ? "ДЕМО · ВЫМЫШЛЕННЫЕ ДАННЫЕ" : "Проверка пути"} · ${esc(PROJECT_STATUSES[p.status])}</div><h2>${esc(p.title)}</h2>
+    <div class="route-endpoints"><p><small>Откуда</small><b>${esc(p.originDescription)}</b></p><span aria-hidden="true">↓</span><p><small>Куда</small><b>${esc(p.destinationDescription)}</b></p></div>
+    <p><b>Для кого:</b> ${esc(p.targetRequirements)}</p><p><b>Проверяем:</b> ${esc(p.objective)}</p><p class="muted">${esc(p.partnerName || "Сообщество ещё не указано")} · Координатор: ${esc(p.coordinator)}${p.fieldworkDate ? ` · Выход: ${esc(p.fieldworkDate)}` : ""}</p>
+    ${p.instructions ? `<p class="notice">${esc(p.instructions)}</p>` : ""}<ol class="route-parts">${p.parts.map((part) => `<li><b>${esc(part.label)}</b><span>${esc(COVERAGE_STATUSES[part.coverage])}</span></li>`).join("")}</ol>
+    <div class="button-row"><button id="start-fieldwork" class="button button-primary">Начать сбор</button><button id="open-results" class="button button-secondary">Открыть результаты</button><button id="edit-project" class="button button-ghost">Изменить задание</button></div>
+    ${p.isDemo ? '<p class="muted">Схемы и решения придуманы для знакомства с интерфейсом. Для полевого выхода создайте отдельный маршрут.</p>' : ""}
+    ${(p.importVariants || []).map((v, i) => `<details class="notice"><summary>Другая версия задания ${v.resolvedAt ? "— рассмотрена" : "— требуется решение"}</summary><p>Описание из файла сохранено для сравнения. Текущее задание не перезаписано.</p><pre>${esc(JSON.stringify(v.project, null, 2))}</pre>${v.resolvedAt ? `<p>Оставлено текущее задание: ${esc(v.resolution)} · ${esc(dateLabel(v.resolvedAt))}</p>` : `<form class="variant-form" data-index="${i}"><label class="field"><span>Почему оставляем текущее задание?</span><textarea name="reason" required></textarea></label><button class="button button-secondary">Зафиксировать решение</button></form>`}</details>`).join("")}
+  </article>` : '<div class="empty-state">Создайте проверку своего пути или загрузите файл задания от координатора.</div>';
+  on("start-fieldwork", "click", () => { resetForm(); showView("collector-view"); });
+  on("open-results", "click", () => showView("records-view"));
+  on("edit-project", "click", () => openProjectForm(p));
+  document.querySelectorAll(".variant-form").forEach((form) => form.addEventListener("submit", safe(async (event) => {
+    event.preventDefault(); const reason = new FormData(form).get("reason").trim(); if (!reason) throw new Error("Укажите основание решения.");
+    const current = requireProject(), variants = current.importVariants.map((v, i) => i === Number(form.dataset.index) ? { ...v, resolvedAt: nowISO(), resolution: reason, reviewer: current.coordinator } : v);
+    await saveProject({ ...current, importVariants: variants, updatedAt: nowISO() }); await refresh();
+  })));
+  renderLegacy();
 }
 
-function updateConnectionBadge() {
-  const badge = byId("connection-badge");
-  badge.textContent = navigator.onLine ? "Онлайн" : "Без сети";
-  badge.classList.toggle("is-offline", !navigator.onLine);
+const fields = { "project-name": "title", "partner-name": "partnerName", coordinator: "coordinator", origin: "originDescription", destination: "destinationDescription", "target-requirements": "targetRequirements", objective: "objective", instructions: "instructions", "fieldwork-date": "fieldworkDate" };
+function openProjectForm(p = null) {
+  showView("project-view"); $("project-form").reset(); $("project-form").hidden = false; $("project-id").value = p?.id || "";
+  $("project-form-title").textContent = p ? "Изменить задание" : "Новая проверка";
+  for (const [field, key] of Object.entries(fields)) $(field).value = p?.[key] || "";
+  $("project-status").innerHTML = options(PROJECT_STATUSES, p?.status || "DRAFT");
+  $("project-parts").value = (p?.parts.map((part) => part.label) || DEFAULT_PARTS).join("\n");
+  $("project-form").scrollIntoView({ block: "start" }); $("project-name").focus({ preventScroll: true });
+}
+async function submitProject(event) {
+  event.preventDefault(); const previous = state.snapshot.projects.find((p) => p.id === $("project-id").value), at = nowISO();
+  const labels = $("project-parts").value.split("\n").map((s) => s.trim()).filter(Boolean);
+  if (new Set(labels).size !== labels.length) throw new Error("Названия частей не должны повторяться.");
+  const removed = previous?.parts.filter((part) => !labels.includes(part.label)) || [];
+  if (removed.some((part) => state.snapshot.observations.some((r) => r.auditProjectId === previous.id && r.routePartId === part.id))) throw new Error("Нельзя удалить или переименовать часть с наблюдениями. Добавьте уточнение в инструкцию или новую часть.");
+  const project = { ...previous, id: previous?.id || id(), createdAt: previous?.createdAt || at, updatedAt: at, status: $("project-status").value, isDemo: Boolean(previous?.isDemo),
+    ...Object.fromEntries(Object.entries(fields).map(([field, key]) => [key, $(field).value.trim()])),
+    parts: labels.map((label) => previous?.parts.find((part) => part.label === label) || { id: id(), label, coverage: "UNCHECKED", coverageNote: "" }) };
+  const errors = validateProject(project); if (errors.length) throw new Error(errors.join(" "));
+  await saveProject(project); state.activeId = project.id; localStorage.setItem("urbanaccess-project", project.id); await refresh(); resetForm(); $("project-form").hidden = true; notify("Задание сохранено на этом устройстве.");
 }
 
-function showView(viewId) {
-  document.querySelectorAll(".view").forEach((view) => { view.hidden = view.id !== viewId; });
-  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("is-active", button.dataset.view === viewId));
-  if (viewId === "records-view") renderRecords();
-  if (viewId === "collector-view") requestAnimationFrame(renderMap);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+function renderLegacy() {
+  const legacy = state.snapshot.observations.filter((r) => !r.auditProjectId), p = getProject();
+  $("legacy-panel").innerHTML = !legacy.length ? "" : `<details class="card"><summary>Прежние наблюдения без маршрута: ${legacy.length}</summary><p>Все записи и фотографии сохранены. Выберите подходящую часть текущего маршрута, чтобы перенести запись на проверку. Учебный маршрут для этого не подходит.</p>${legacy.map((r) => `<form class="legacy-form" data-record="${esc(r.id)}"><p>${esc(r.locationDescription || r.placeName || r.id)} · ${esc(dateLabel(r.observedAt))}</p><label class="field"><span>Часть текущего маршрута</span><select name="part">${p?.parts.map((part) => `<option value="${esc(part.id)}">${esc(part.label)}</option>`).join("") || '<option value="">Сначала создайте маршрут</option>'}</select></label><button class="button button-secondary" ${!p || p.isDemo ? "disabled" : ""}>Привязать к маршруту</button></form>`).join("")}</details>`;
+  document.querySelectorAll(".legacy-form").forEach((form) => form.addEventListener("submit", safe(async (event) => {
+    event.preventDefault(); const p = requireProject(); if (p.isDemo) throw new Error("Реальные записи нельзя переносить в демо.");
+    const record = state.snapshot.observations.find((r) => r.id === form.dataset.record), part = new FormData(form).get("part");
+    if (!p.parts.some((x) => x.id === part)) throw new Error("Выберите часть маршрута.");
+    await saveRecords([{ ...record, auditProjectId: p.id, routePartId: part, reviewStatus: "UNREVIEWED", isDemo: false, updatedAt: nowISO() }]); await refresh(); notify("Запись привязана. Перед приёмкой уточните участника и основание оценки.");
+  })));
 }
 
-function revokeUrls(urls) {
-  for (const url of urls) URL.revokeObjectURL(url);
-  urls.length = 0;
+function visibleRecords() {
+  const p = getProject(); if (!p) return [];
+  return projectRecords(p, state.snapshot.observations).filter((r) => state.filter === "HISTORY" ? r.supersededById : !r.supersededById && (state.filter === "ALL" || (r.reviewStatus || "UNREVIEWED") === state.filter)).sort((a, b) => (a.observedAt || "").localeCompare(b.observedAt || "") || a.id.localeCompare(b.id));
+}
+function drawMap() { renderOverview($("results-map"), visibleRecords(), getProject()?.isDemo); }
+function recordCard(r, index) {
+  const p = getProject(), photos = state.snapshot.photos.filter((x) => x.observationId === r.id);
+  const images = photos.map((photo) => { const url = URL.createObjectURL(photo.blob); state.urls.push(url); return `<button class="photo-preview" data-photo="${esc(url)}" aria-label="Увеличить фото: ${esc(photo.name || "наблюдение")}"><img src="${esc(url)}" alt="${esc(photo.name || "Фото наблюдения")}" loading="lazy"></button>`; }).join("");
+  return `<article id="record-${esc(r.id)}" class="card observation-card" tabindex="-1"><div class="card-topline"><span class="record-number">${index + 1}</span><span class="review-badge ${r.reviewStatus === "ACCEPTED" ? "accepted" : ""}">${esc(REVIEW_STATUSES[r.reviewStatus] || "Не проверено")}</span>${r.status === "DRAFT" ? '<span class="muted">Черновик</span>' : ""}</div>
+    <h3>${esc(r.locationDescription || "Без ориентира")}</h3><p class="muted">${esc(p.parts.find((x) => x.id === r.routePartId)?.label || "Часть не указана")} · ${esc(dateLabel(r.observedAt))}</p>
+    <p><b>${esc(r.finding === "PRESENT" ? RESTRICTION_LABELS[r.restrictionType] || "Влияние не указано" : FINDING_LABELS[r.finding])}</b></p>${r.finding === "PRESENT" ? `<p>${esc(ALTERNATIVE_ACCESS_LABELS[r.alternativeAccess] || "Альтернатива не указана")}${r.alternativeDescription ? `: ${esc(r.alternativeDescription)}` : ""}</p>` : ""}
+    <p>${esc(r.comment || "")}</p><p class="muted">${esc(r.reporterAlias || "Участник не указан")} · ${esc(EXPERIENCE_SOURCES[r.experienceSource] || "Основание не указано")}</p><p class="muted">${esc(CONTEXT_LABELS[r.contextType] || "")} · ${esc(r.levelRef || "уровень не указан")} · ${esc(r.latitude)}, ${esc(r.longitude)}</p>
+    ${r.conflictOfId ? '<p class="notice">Из файла получена другая версия этой записи. Сравните обе и отклоните неподходящую либо подтвердите замену.</p>' : ""}${r.supersededById ? '<p class="notice">Архивная запись: координатор принял обновление. Она сохранена для истории.</p>' : ""}
+    <div class="record-photos">${images}</div><p><b>Решение:</b> ${esc(r.reviewComment || "Ещё не принято")}</p>
+    ${r.reviewHistory?.length ? `<details><summary>История решений (${r.reviewHistory.length})</summary><ul>${r.reviewHistory.map((h) => `<li>${esc(dateLabel(h.at))}, ${esc(h.reviewer)}: ${esc(REVIEW_STATUSES[h.status])}. ${esc(h.comment)}</li>`).join("")}</ul></details>` : ""}
+    <div class="button-row"><button class="button button-secondary button-small" data-action="edit" data-id="${esc(r.id)}">${r.status === "DRAFT" ? "Продолжить" : "Исправить копией"}</button>${!r.supersededById ? `<button class="button button-ghost button-small" data-action="recheck" data-id="${esc(r.id)}">Проверить снова</button>` : ""}${r.status === "DRAFT" ? `<button class="button button-ghost button-small" data-action="delete" data-id="${esc(r.id)}">Удалить черновик</button>` : ""}</div>
+    ${r.status === "READY" && !r.supersededById ? `<details class="review-panel"><summary>Решение координатора</summary><form class="review-form" data-record="${esc(r.id)}"><label class="field"><span>Статус</span><select name="status">${options(REVIEW_STATUSES, r.reviewStatus || "UNREVIEWED")}</select></label><label class="field"><span>Кто проверил</span><input name="reviewer" value="${esc(p.coordinator)}" required maxlength="100"></label><label class="field"><span>Основание решения</span><textarea name="comment" required maxlength="2000">${esc(r.reviewComment || "")}</textarea></label>${r.previousObservationId ? '<label class="checkbox-field"><input name="replace" type="checkbox"> После приёмки заменить прежнюю запись этим наблюдением; старую сохранить в истории</label>' : ""}<button class="button button-primary">Сохранить решение</button></form></details>` : ""}
+  </article>`;
 }
 
-function setFindingVisibility() {
-  const finding = form.elements.finding.value;
-  const restriction = byId("restriction-field");
-  const alternative = byId("alternative-field");
-  restriction.hidden = finding === "ABSENT";
-  alternative.hidden = finding === "ABSENT";
-  if (finding === "ABSENT") {
-    document.querySelectorAll('input[name="restrictionType"]').forEach((input) => { input.checked = false; });
-    document.querySelectorAll('input[name="alternativeAccess"]').forEach((input) => { input.checked = false; });
-  }
-}
-
-function stopLocationSearch() {
-  if (state.locationWatchId !== null) navigator.geolocation?.clearWatch(state.locationWatchId);
-  clearTimeout(state.locationSettleTimer);
-  clearTimeout(state.locationTimeout);
-  state.locationWatchId = null;
-  state.locationSettleTimer = null;
-  state.locationTimeout = null;
-  const button = byId("locate-button");
-  button.disabled = false;
-  button.innerHTML = '<span aria-hidden="true">◎</span> Определить моё место';
-}
-
-function resetForm() {
-  stopLocationSearch();
-  revokeUrls(state.previewUrls);
-  state.photos = [];
-  state.editingRecord = null;
-  state.mapZoom = 18;
-  form.reset();
-  byId("record-id").value = "";
-  byId("observed-at").value = toLocalDateTimeInput();
-  byId("context-type").value = "STREET";
-  document.querySelector('input[name="finding"][value="PRESENT"]').checked = true;
-  byId("device-latitude").value = "";
-  byId("device-longitude").value = "";
-  byId("device-accuracy").value = "";
-  byId("position-source").value = "MANUAL";
-  byId("location-status").textContent = "Координаты ещё не получены";
-  byId("form-mode-hint").textContent = "Сохраните черновик или отметьте запись готовой к проверке.";
-  byId("collector-title").textContent = "Новое наблюдение";
-  byId("photo-input").value = "";
-  byId("form-errors").hidden = true;
-  document.querySelectorAll(".field-error").forEach((element) => element.classList.remove("field-error"));
-  setFindingVisibility();
-  renderPhotos();
-  renderMap();
-}
-
-function readObservation() {
-  const finding = form.elements.finding.value;
-  return {
-    id: byId("record-id").value || makeId(),
-    status: "DRAFT",
-    observedAt: byId("observed-at").value ? new Date(byId("observed-at").value).toISOString() : "",
-    latitude: numberOrNull(byId("latitude").value),
-    longitude: numberOrNull(byId("longitude").value),
-    positionSource: byId("position-source").value || "MANUAL",
-    deviceLatitude: numberOrNull(byId("device-latitude").value),
-    deviceLongitude: numberOrNull(byId("device-longitude").value),
-    deviceAccuracyM: numberOrNull(byId("device-accuracy").value),
-    contextType: byId("context-type").value,
-    barrierType: byId("barrier-type").value || null,
-    finding,
-    restrictionType: finding === "PRESENT" ? form.elements.restrictionType.value || null : null,
-    alternativeAccess: finding === "PRESENT" ? form.elements.alternativeAccess.value || null : null,
-    placeName: byId("place-name").value.trim(),
-    levelRef: byId("level-ref").value.trim(),
-    locationDescription: byId("location-description").value.trim(),
-    measurements: {
-      heightCm: numberOrNull(byId("height-cm").value),
-      availableWidthCm: numberOrNull(byId("width-cm").value),
-      slopePercent: numberOrNull(byId("slope-percent").value),
-    },
-    comment: byId("comment").value.trim(),
-    photoCount: state.photos.length,
-  };
-}
-
-function displayErrors(errors) {
-  document.querySelectorAll(".field-error").forEach((element) => element.classList.remove("field-error"));
-  const mapping = {
-    observedAt: [byId("observed-at")],
-    location: [byId("latitude"), byId("longitude")],
-    contextType: [byId("context-type")],
-    restrictionType: [...document.querySelectorAll('input[name="restrictionType"]')].map((input) => input.nextElementSibling),
-    alternativeAccess: [...document.querySelectorAll('input[name="alternativeAccess"]')].map((input) => input.nextElementSibling),
-    photos: [document.querySelector(".photo-button")],
-    heightCm: [byId("height-cm")],
-    availableWidthCm: [byId("width-cm")],
-    slopePercent: [byId("slope-percent")],
-  };
-  for (const key of Object.keys(errors)) {
-    for (const element of mapping[key] || []) element?.classList.add("field-error");
-  }
-  const summary = byId("form-errors");
-  const messages = [...new Set(Object.values(errors))];
-  summary.innerHTML = "";
-  const title = document.createElement("b");
-  title.textContent = "Проверьте запись:";
-  const list = document.createElement("ul");
-  for (const message of messages) {
-    const item = document.createElement("li");
-    item.textContent = message;
-    list.append(item);
-  }
-  summary.append(title, list);
-  summary.hidden = false;
-  summary.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-async function persistObservation(ready) {
-  const observation = readObservation();
-  const errors = validateObservation(observation, state.photos.length, ready);
-  if (Object.keys(errors).length) {
-    displayErrors(errors);
-    return;
-  }
-
-  const button = ready ? byId("save-ready") : byId("save-draft");
-  button.disabled = true;
-  try {
-    const now = new Date().toISOString();
-    observation.status = ready ? "READY" : "DRAFT";
-    observation.createdAt = state.editingRecord?.createdAt || now;
-    observation.updatedAt = now;
-    observation.photoCount = state.photos.length;
-    await saveObservation(observation, state.photos.map(({ previewUrl, ...photo }) => photo));
-    showToast(ready ? "Наблюдение готово к проверке" : "Черновик сохранён");
-    resetForm();
-    await refreshCount();
-    showView("records-view");
-  } catch (error) {
-    console.error(error);
-    showToast("Не удалось сохранить. Проверьте свободное место.");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-function renderPhotos() {
-  revokeUrls(state.previewUrls);
-  const list = byId("photo-list");
-  list.innerHTML = "";
-  let totalSize = 0;
-  for (const photo of state.photos) {
-    totalSize += photo.size || photo.blob?.size || 0;
-    const url = URL.createObjectURL(photo.blob);
-    state.previewUrls.push(url);
-    const item = document.createElement("div");
-    item.className = "photo-item";
-    const image = document.createElement("img");
-    image.src = url;
-    image.alt = photo.name || "Фотография наблюдения";
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.setAttribute("aria-label", "Удалить фотографию");
-    remove.textContent = "×";
-    remove.addEventListener("click", () => {
-      state.photos = state.photos.filter((candidate) => candidate.id !== photo.id);
-      renderPhotos();
-    });
-    item.append(image, remove);
-    list.append(item);
-  }
-  byId("photo-size").textContent = state.photos.length ? `${state.photos.length} фото · ${formatBytes(totalSize)}` : "";
-}
-
-async function addPhotos(files) {
-  const selectedCount = files.length;
-  const allowed = [...files].filter((file) => file.type.startsWith("image/"));
-  for (const file of allowed) {
-    state.photos.push({
-      id: makeId(),
-      name: file.name || `photo-${Date.now()}.jpg`,
-      type: file.type || "image/jpeg",
-      size: file.size,
-      lastModified: file.lastModified || Date.now(),
-      blob: file,
-    });
-  }
-  byId("photo-input").value = "";
-  renderPhotos();
-  if (allowed.length !== selectedCount) showToast("Некоторые файлы не были изображениями");
-}
-
-function rememberDeviceLocation(sample) {
-  byId("device-latitude").value = sample.latitude;
-  byId("device-longitude").value = sample.longitude;
-  byId("device-accuracy").value = sample.accuracy;
-}
-
-function selectDeviceLocation(sample) {
-  rememberDeviceLocation(sample);
-  byId("latitude").value = sample.latitude.toFixed(7);
-  byId("longitude").value = sample.longitude.toFixed(7);
-  byId("position-source").value = "GPS";
-  const suffix = locationQuality(sample.accuracy) === "PRECISE"
-    ? "точку можно поправить"
-    : "проверьте точку на карте";
-  byId("location-status").textContent = `GPS ±${Math.round(sample.accuracy)} м · ${suffix}`;
-  renderMap();
-}
-
-function finishLocationSearch() {
-  const best = state.locationBest;
-  stopLocationSearch();
-  if (!best) {
-    byId("location-status").textContent = "Не удалось получить свежую геопозицию";
-    showToast("Можно поставить точку на карте вручную");
-    return;
-  }
-  if (locationQuality(best.accuracy) === "POOR") {
-    rememberDeviceLocation(best);
-    byId("location-status").textContent = `GPS слишком неточный: ±${Math.round(best.accuracy)} м · точку не изменили`;
-    showToast("Включите точное местоположение или поставьте точку на карте");
-    return;
-  }
-  selectDeviceLocation(best);
-}
-
-function requestLocation() {
-  const button = byId("locate-button");
-  if (!navigator.geolocation) {
-    showToast("Этот браузер не поддерживает геолокацию");
-    return;
-  }
-  stopLocationSearch();
-  state.locationBest = null;
-  button.disabled = true;
-  button.textContent = "Уточняем местоположение…";
-  byId("location-status").textContent = "Ищем свежий и точный сигнал…";
-  state.locationWatchId = navigator.geolocation.watchPosition(
-    (position) => {
-      const sample = normalizeGeolocationPosition(position);
-      if (!sample) {
-        byId("location-status").textContent = "Отбрасываем устаревшую геопозицию…";
-        return;
-      }
-      state.locationBest = pickMoreAccurateSample(state.locationBest, sample);
-      rememberDeviceLocation(state.locationBest);
-      byId("location-status").textContent = `Уточняем: сейчас ±${Math.round(state.locationBest.accuracy)} м…`;
-      const quality = locationQuality(state.locationBest.accuracy);
-      if (quality === "PRECISE") {
-        finishLocationSearch();
-      } else if (quality === "ACCEPTABLE" && state.locationSettleTimer === null) {
-        state.locationSettleTimer = setTimeout(finishLocationSearch, LOCATION_CONFIG.settleTimeMs);
-      }
-    },
-    (error) => {
-      const messages = {
-        1: "Доступ к геолокации запрещён",
-        2: "Не удалось определить положение",
-        3: "GPS не ответил вовремя",
-      };
-      if (error.code === 1) {
-        stopLocationSearch();
-        byId("location-status").textContent = messages[error.code];
-        showToast("Разрешите геолокацию для этого сайта или поставьте точку вручную");
-      } else if (!state.locationBest) {
-        byId("location-status").textContent = `${messages[error.code] || "Ошибка геолокации"} · продолжаем искать…`;
-      }
-    },
-    { enableHighAccuracy: true, timeout: LOCATION_CONFIG.searchTimeMs, maximumAge: LOCATION_CONFIG.maxSampleAgeMs },
-  );
-  state.locationTimeout = setTimeout(finishLocationSearch, LOCATION_CONFIG.searchTimeMs);
-}
-
-function lonToTileX(longitude, zoom) {
-  return ((longitude + 180) / 360) * 2 ** zoom;
-}
-
-function latToTileY(latitude, zoom) {
-  const radians = latitude * Math.PI / 180;
-  return (1 - Math.asinh(Math.tan(radians)) / Math.PI) / 2 * 2 ** zoom;
-}
-
-function tileXToLon(x, zoom) {
-  return x / 2 ** zoom * 360 - 180;
-}
-
-function tileYToLat(y, zoom) {
-  return Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** zoom))) * 180 / Math.PI;
-}
-
-function renderMap() {
-  const map = byId("map");
-  map.querySelectorAll(".map-tile").forEach((tile) => tile.remove());
-  const selectedLatitude = numberOrNull(byId("latitude").value);
-  const selectedLongitude = numberOrNull(byId("longitude").value);
-  const empty = byId("map-empty");
-  const hasSelectedPoint = Number.isFinite(selectedLatitude) && selectedLatitude >= -85 && selectedLatitude <= 85 &&
-    Number.isFinite(selectedLongitude) && selectedLongitude >= -180 && selectedLongitude <= 180;
-  const latitude = hasSelectedPoint ? selectedLatitude : DEFAULT_MAP_CENTER.latitude;
-  const longitude = hasSelectedPoint ? selectedLongitude : DEFAULT_MAP_CENTER.longitude;
-  empty.hidden = true;
-  map.classList.toggle("has-selected-point", hasSelectedPoint);
-  if (map.clientWidth === 0) return;
-
-  const zoom = state.mapZoom;
-  const n = 2 ** zoom;
-  const centerX = lonToTileX(longitude, zoom);
-  const centerY = latToTileY(latitude, zoom);
-  const columns = Math.ceil(map.clientWidth / 256) + 2;
-  const rows = Math.ceil(map.clientHeight / 256) + 2;
-  const startX = Math.floor(centerX - columns / 2);
-  const startY = Math.floor(centerY - rows / 2);
-
-  for (let x = startX; x <= startX + columns; x += 1) {
-    for (let y = startY; y <= startY + rows; y += 1) {
-      if (y < 0 || y >= n) continue;
-      const tile = document.createElement("img");
-      const wrappedX = ((x % n) + n) % n;
-      tile.className = "map-tile";
-      tile.alt = "";
-      tile.loading = "lazy";
-      tile.draggable = false;
-      tile.src = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`;
-      tile.style.left = `${map.clientWidth / 2 + (x - centerX) * 256}px`;
-      tile.style.top = `${map.clientHeight / 2 + (y - centerY) * 256}px`;
-      map.insertBefore(tile, empty);
-    }
-  }
-}
-
-function movePointFromMap(event) {
-  stopLocationSearch();
-  const map = byId("map");
-  const rect = map.getBoundingClientRect();
-  const selectedLatitude = numberOrNull(byId("latitude").value);
-  const selectedLongitude = numberOrNull(byId("longitude").value);
-  const hasSelectedPoint = Number.isFinite(selectedLatitude) && selectedLatitude >= -85 && selectedLatitude <= 85 &&
-    Number.isFinite(selectedLongitude) && selectedLongitude >= -180 && selectedLongitude <= 180;
-  const latitude = hasSelectedPoint ? selectedLatitude : DEFAULT_MAP_CENTER.latitude;
-  const longitude = hasSelectedPoint ? selectedLongitude : DEFAULT_MAP_CENTER.longitude;
-  const centerX = lonToTileX(longitude, state.mapZoom);
-  const centerY = latToTileY(latitude, state.mapZoom);
-  const clickedX = centerX + (event.clientX - rect.left - rect.width / 2) / 256;
-  const clickedY = centerY + (event.clientY - rect.top - rect.height / 2) / 256;
-  byId("latitude").value = tileYToLat(clickedY, state.mapZoom).toFixed(7);
-  byId("longitude").value = tileXToLon(clickedX, state.mapZoom).toFixed(7);
-  byId("position-source").value = "MANUAL";
-  const accuracy = numberOrNull(byId("device-accuracy").value);
-  byId("location-status").textContent = accuracy === null ? "Точка указана вручную" : `Точка поправлена вручную · исходный GPS ±${Math.round(accuracy)} м сохранён`;
-  renderMap();
-}
-
-function fillForm(record, photos) {
-  resetForm();
-  state.editingRecord = record;
-  state.photos = photos.map((photo) => ({ ...photo }));
-  byId("record-id").value = record.id;
-  byId("observed-at").value = toLocalDateTimeInput(new Date(record.observedAt));
-  byId("latitude").value = record.latitude ?? "";
-  byId("longitude").value = record.longitude ?? "";
-  byId("position-source").value = record.positionSource || "MANUAL";
-  byId("device-latitude").value = record.deviceLatitude ?? "";
-  byId("device-longitude").value = record.deviceLongitude ?? "";
-  byId("device-accuracy").value = record.deviceAccuracyM ?? "";
-  byId("context-type").value = record.contextType || "STREET";
-  byId("barrier-type").value = record.barrierType || "";
-  const finding = document.querySelector(`input[name="finding"][value="${record.finding || "PRESENT"}"]`);
-  if (finding) finding.checked = true;
-  const restriction = document.querySelector(`input[name="restrictionType"][value="${record.restrictionType}"]`);
-  if (restriction) restriction.checked = true;
-  const alternative = document.querySelector(`input[name="alternativeAccess"][value="${record.alternativeAccess}"]`);
-  if (alternative) alternative.checked = true;
-  byId("place-name").value = record.placeName || "";
-  byId("level-ref").value = record.levelRef || "";
-  byId("location-description").value = record.locationDescription || "";
-  byId("height-cm").value = record.measurements?.heightCm ?? "";
-  byId("width-cm").value = record.measurements?.availableWidthCm ?? "";
-  byId("slope-percent").value = record.measurements?.slopePercent ?? "";
-  byId("comment").value = record.comment || "";
-  byId("collector-title").textContent = "Редактирование наблюдения";
-  byId("form-mode-hint").textContent = record.status === "READY" ? "Запись готова к проверке. Изменения сохранят новую локальную версию." : "Это сохранённый черновик.";
-  const accuracy = numberOrNull(record.deviceAccuracyM);
-  byId("location-status").textContent = record.positionSource === "GPS" && accuracy !== null
-    ? `GPS ±${Math.round(accuracy)} м · точку можно поправить`
-    : "Точка указана вручную";
-  setFindingVisibility();
-  renderPhotos();
-  showView("collector-view");
-}
-
-async function editRecord(id) {
-  const [record, photos] = await Promise.all([getObservation(id), getObservationPhotos(id)]);
-  if (!record) return;
-  fillForm(record, photos);
-}
-
-function createRecordCard(record, photos) {
-  const card = document.createElement("article");
-  card.className = "record-card";
-  const photo = document.createElement("div");
-  photo.className = "record-photo";
-  if (photos[0]?.blob) {
-    const url = URL.createObjectURL(photos[0].blob);
-    state.listUrls.push(url);
-    const image = document.createElement("img");
-    image.src = url;
-    image.alt = "";
-    photo.append(image);
-  } else {
-    const placeholder = document.createElement("span");
-    placeholder.textContent = "□";
-    photo.append(placeholder);
-  }
-
-  const body = document.createElement("div");
-  body.className = "record-body";
-  const top = document.createElement("div");
-  top.className = "record-top";
-  const heading = document.createElement("h3");
-  heading.textContent = BARRIER_LABELS[record.barrierType] || "Ограничение прохода";
-  const status = document.createElement("em");
-  status.className = `record-status ${record.status === "READY" ? "ready" : ""}`;
-  status.textContent = record.status === "READY" ? "Готово" : "Черновик";
-  top.append(heading, status);
-
-  const meta = document.createElement("p");
-  meta.className = "record-meta";
-  const context = CONTEXT_LABELS[record.contextType] || "Контекст не указан";
-  const finding = FINDING_LABELS[record.finding] || "Состояние не указано";
-  const restriction = RESTRICTION_LABELS[record.restrictionType];
-  const alternative = ALTERNATIVE_ACCESS_LABELS[record.alternativeAccess];
-  meta.textContent = [formatObservationDate(record.observedAt), context, restriction || finding, alternative].filter(Boolean).join(" · ");
-
-  const actions = document.createElement("div");
-  actions.className = "record-actions";
-  const edit = document.createElement("button");
-  edit.type = "button";
-  edit.textContent = "Открыть";
-  edit.addEventListener("click", () => editRecord(record.id));
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "danger";
-  remove.textContent = "Удалить";
-  remove.addEventListener("click", async () => {
-    if (!window.confirm("Удалить это наблюдение и его фотографии с устройства?")) return;
-    await deleteObservation(record.id);
-    showToast("Наблюдение удалено");
-    await renderRecords();
-    await refreshCount();
+function renderResults() {
+  state.urls.forEach((url) => URL.revokeObjectURL(url)); state.urls = [];
+  const p = getProject(); $("results-project").textContent = p?.title || "Выберите маршрут";
+  if (!p) { $("results-content").replaceChildren(); return; }
+  const s = auditSummary(p, state.snapshot.observations), rows = visibleRecords();
+  $("results-content").innerHTML = `${p.isDemo ? '<p class="notice"><b>ДЕМО.</b> Вымышленный маршрут, учебные схемы и решения. <button id="add-demo-example" class="text-button">Заполнить учебную запись</button></p>' : ""}
+    <div class="stats-row"><div><b>${s.accepted.length}</b><span>принято</span></div><div><b>${s.pending.length}</b><span>ждут решения</span></div><div><b>${s.unknownParts.length}</b><span>частей не проверено</span></div></div>
+    <section class="card conclusion-card"><p class="eyebrow">Вывод для этого пути и требований</p><h3>${esc(CONCLUSIONS[s.effectiveConclusion])}</h3><p>${esc(p.conclusionNote || "Координатор ещё не сформулировал вывод.")}</p>${s.reasons.length ? `<details><summary>Что мешает подтвердить весь путь</summary><ul>${s.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></details>` : ""}<div class="button-row"><button id="open-report" class="button button-primary">Открыть отчёт</button><button id="results-export" class="button button-secondary">Передать результаты</button></div></section>
+    <details class="card"><summary>Обследование частей маршрута</summary><p>Точки показывают отдельные места. Отметку «обследован целиком» координатор ставит после проверки всей части, включая подходы и указанный обход.</p><form id="coverage-form">${p.parts.map((part, i) => `<fieldset class="coverage-part" data-index="${i}"><legend>${esc(part.label)}</legend><label class="field"><span>Полнота обследования</span><select name="coverage-${i}">${options(COVERAGE_STATUSES, part.coverage)}</select></label><label class="field"><span>Кто обследовал</span><input name="by-${i}" value="${esc(part.checkedBy || "")}" maxlength="100"></label><label class="field"><span>Когда обследовал</span><input name="at-${i}" type="datetime-local" value="${part.checkedAt ? esc(toLocalDateTimeInput(new Date(part.checkedAt))) : ""}"></label><label class="field"><span>Основание: что именно проверили, где границы</span><textarea name="note-${i}" maxlength="2000">${esc(part.coverageNote || "")}</textarea></label></fieldset>`).join("")}<label class="checkbox-field"><input name="confirmed" type="checkbox" ${p.coverageConfirmed ? "checked" : ""}> Как координатор подтверждаю, что перечислены все части проверяемого пути, включая вход и необходимые обходы.</label><button class="button button-secondary">Сохранить обследование частей</button></form></details>
+    <details class="card"><summary>Записать вывод и срок повторной проверки</summary><p>Вывод делает координатор. Давность не удаляет ограничения; истёкший срок проверки делает положительный итог неподтверждённым.</p><form id="conclusion-form"><label class="field"><span>Итог</span><select name="conclusion">${options(CONCLUSIONS, p.conclusion || "UNKNOWN")}</select></label><label class="field"><span>Для кого, при каких условиях и на чём основан вывод</span><textarea name="note" required maxlength="3000">${esc(p.conclusionNote || "")}</textarea></label><label class="field"><span>Повторно проверить до</span><input type="date" name="next" value="${esc(p.nextCheckAt || "")}"></label><button class="button button-primary">Сохранить вывод</button></form></details>
+    ${s.pairs.length ? `<details class="card" ${s.conflicts.length ? "open" : ""}><summary>Похожие места и возможные противоречия: ${s.pairs.length}</summary><p>Близость точек — подсказка. Направление, уровень, время и фотографии сравнивает координатор.</p><ul>${s.pairs.map((pair) => `<li>${pair.conflict ? "Возможное противоречие" : "Возможный дубль"}: ${[pair.a, pair.b].map((rid) => { const r = s.all.find((r) => r.id === rid); return `<a href="#record-${esc(rid)}">${esc(r.locationDescription || rid)} · ${esc(r.reporterAlias || "участник")}</a>`; }).join(" ↔ ")}</li>`).join("")}</ul><p class="muted">Для разных проходов уточните часть маршрута или уровень через исправление записи. Для повторной проверки примите замену. Неверную версию отклоните с объяснением.</p></details>` : ""}
+    <label class="field"><span>Наблюдения</span><select id="review-filter">${options({ ALL: "Все актуальные", ...REVIEW_STATUSES, HISTORY: "Архив: заменённые записи" }, state.filter)}</select></label>
+    <div class="map-block"><div id="results-map" class="overview-map"></div><div class="map-caption"><span>${p.isDemo ? "Учебная схема. Нажмите номер, чтобы открыть запись." : "Точки наблюдений. Подложка требует сети; путь не построен."}</span>${!p.isDemo ? '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>' : ""}</div></div>
+    <p class="map-legend">Зелёный — принятая свободная точка · оранжевый — принятое ограничение · охра — другие решения. Цвет отдельной точки не оценивает весь путь.</p>
+    <div id="record-list">${rows.map(recordCard).join("") || '<div class="empty-state">Здесь пока нет записей. Добавьте наблюдение или измените фильтр.</div>'}</div>
+    <details class="card"><summary>Выгрузка для таблицы и карты</summary><p>CSV и GeoJSON содержат все записи проекта, включая архивные. Фотографии входят в JSON и отчёт.</p><div class="button-row"><button id="export-csv" class="button button-secondary">CSV</button><button id="export-geojson" class="button button-secondary">GeoJSON</button></div></details>`;
+  const pairsPanel = document.createElement("div");
+  pairsPanel.innerHTML = s.pairs.filter((pair) => pair.conflict).map((pair) => `<details class="card"><summary>${pair.resolution ? "Противоречие рассмотрено" : "Разобрать пару записей"}: ${esc(s.all.find((r) => r.id === pair.a).locationDescription || "место")}</summary>${pair.resolution ? `<p>${esc(pair.resolution.note)} · ${esc(pair.resolution.reviewer)} · ${esc(dateLabel(pair.resolution.at))}</p>` : `<p>Если обе записи верны, объясните различие места, направления или условий. Ошибочную запись отклоните, а подтверждённое изменение примите с заменой прежней записи.</p><form class="pair-form" data-a="${esc(pair.a)}" data-b="${esc(pair.b)}"><label class="field"><span>Почему обе записи совместимы?</span><textarea name="reason" required maxlength="2000"></textarea></label><button class="button button-secondary">Зафиксировать разбор</button></form>`}</details>`).join("");
+  $("record-list").before(pairsPanel);
+  document.querySelectorAll("[data-photo]").forEach((button) => button.addEventListener("click", () => { $("photo-preview-image").src = button.dataset.photo; $("photo-preview-image").alt = button.querySelector("img").alt; $("photo-dialog").showModal(); }));
+  document.querySelectorAll(".pair-form").forEach((form) => form.addEventListener("submit", safe(async (event) => { event.preventDefault(); await saveProject(resolvePair(requireProject(), state.snapshot.observations, form.dataset.a, form.dataset.b, new FormData(form).get("reason"))); await refresh(); drawMap(); notify("Разбор записан. Каждое наблюдение всё равно требует отдельного решения."); })));
+  on("review-filter", "change", (event) => { state.filter = event.target.value; renderResults(); drawMap(); });
+  on("open-report", "click", openReport); on("results-export", "click", () => exportBundle("RESULTS"));
+  on("add-demo-example", "click", addDemoExample);
+  on("export-csv", "click", () => download("\uFEFF" + observationsToCSV(projectRecords(p, state.snapshot.observations)), downloadName("urbanaccess", "csv"), "text/csv;charset=utf-8"));
+  on("export-geojson", "click", () => download(JSON.stringify({ type: "FeatureCollection", features: projectRecords(p, state.snapshot.observations).map(observationToGeoJSONFeature).filter(Boolean) }, null, 2), downloadName("urbanaccess", "geojson"), "application/geo+json"));
+  on("coverage-form", "submit", async (event) => {
+    event.preventDefault(); const data = new FormData(event.target), current = requireProject();
+    const parts = current.parts.map((part, i) => ({ ...part, coverage: data.get(`coverage-${i}`), checkedBy: data.get(`by-${i}`).trim(), checkedAt: data.get(`at-${i}`) ? new Date(data.get(`at-${i}`)).toISOString() : null, coverageNote: data.get(`note-${i}`).trim() }));
+    await saveProject(updateCoverage(current, parts, data.has("confirmed"), state.snapshot.observations)); await refresh(); drawMap(); notify("Обследование частей сохранено. При необходимости обновите итоговый вывод.");
   });
-  actions.append(edit, remove);
-  body.append(top, meta, actions);
-  card.append(photo, body);
-  return card;
+  on("conclusion-form", "submit", async (event) => { event.preventDefault(); const data = new FormData(event.target); await saveProject(saveConclusion(requireProject(), state.snapshot.observations, data.get("conclusion"), data.get("note"), data.get("next"))); await refresh(); drawMap(); notify("Вывод координатора сохранён."); });
+  document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", safe(async () => {
+    const record = state.snapshot.observations.find((r) => r.id === button.dataset.id);
+    if (button.dataset.action === "delete") { if (!confirm("Удалить этот черновик и его фотографии с устройства?")) return; await deleteObservation(record.id); await refresh(); drawMap(); }
+    else fillForm(record, state.snapshot.photos.filter((x) => x.observationId === record.id), button.dataset.action === "recheck");
+  })));
+  document.querySelectorAll(".review-form").forEach((form) => form.addEventListener("submit", safe(async (event) => {
+    event.preventDefault(); const data = new FormData(form), record = state.snapshot.observations.find((r) => r.id === form.dataset.record);
+    if (data.get("status") === "ACCEPTED") { const errors = validatePilotObservation(record, state.snapshot.photos.filter((p) => p.observationId === record.id).length, true, requireProject()); if (Object.keys(errors).length) throw new Error(Object.values(errors).join(" ")); }
+    const reviewed = reviewObservation(record, data.get("status"), data.get("comment"), data.get("reviewer"));
+    const updates = [reviewed]; if (data.has("replace")) updates.push(supersedeRecord(state.snapshot.observations.find((r) => r.id === record.previousObservationId), reviewed));
+    await saveRecords(updates); await refresh(); drawMap(); notify("Решение сохранено в истории.");
+  })));
+  if (state.view === "records-view") requestAnimationFrame(drawMap);
 }
 
-async function renderRecords() {
-  revokeUrls(state.listUrls);
-  const records = await getAllObservations();
-  const list = byId("records-list");
-  list.innerHTML = "";
-  let appBytes = new Blob([JSON.stringify(records)]).size;
-  for (const record of records) {
-    const photos = await getObservationPhotos(record.id);
-    appBytes += photos.reduce((total, photo) => total + (photo.size || photo.blob?.size || 0), 0);
-    list.append(createRecordCard(record, photos));
-  }
-  byId("records-empty").hidden = records.length > 0;
-  byId("record-count").textContent = `${records.length} ${pluralizeRecords(records.length)}`;
-  byId("storage-estimate").textContent = `Данные приложения: ${formatBytes(appBytes)}`;
+async function exportBundle(kind) {
+  const bundle = await createBundle(await getSnapshot(), kind === "BACKUP" ? null : requireProject().id, kind === "ASSIGNMENT");
+  download(JSON.stringify(bundle), downloadName(`urbanaccess-${kind.toLowerCase()}`, "json"), "application/json"); notify("Файл подготовлен. Передайте его выбранному получателю самостоятельно.");
 }
-
-function pluralizeRecords(count) {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return "наблюдение";
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return "наблюдения";
-  return "наблюдений";
+async function previewImport(event) {
+  const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+  state.importFile = null; $("import-preview").hidden = true;
+  const bundle = await readBundle(file), plan = await prepareImport(bundle, await getSnapshot()); state.importFile = bundle;
+  $("import-preview").innerHTML = `<div class="notice"><b>${esc(file.name)}</b><p>Добавить записей: ${plan.observations.length}. Уже есть: ${plan.skipped}. Версий для сравнения: ${plan.conflicts}. Новых или уточнённых проектов: ${plan.projects.length}.</p>${plan.warnings.map((w) => `<p>${esc(w)}</p>`).join("")}<p>Текущие записи и решения сохранятся. Имена и решения в файле — сведения его отправителя, личности приложение не проверяет.</p><div class="button-row"><button id="confirm-import" class="button button-primary">Объединить данные</button><button id="cancel-import" class="button button-ghost">Отмена</button></div></div>`;
+  $("import-preview").hidden = false;
+  on("cancel-import", "click", () => { state.importFile = null; $("import-preview").hidden = true; });
+  on("confirm-import", "click", async () => { const current = await prepareImport(state.importFile, await getSnapshot()); await applyImport(current); state.activeId = state.importFile.projects?.[0]?.id || state.activeId; state.importFile = null; $("import-preview").hidden = true; await refresh(); resetForm(); notify("Данные объединены. Проверьте результаты и спорные версии."); });
+  $("import-preview").scrollIntoView({ block: "center" });
 }
-
-async function refreshCount() {
-  const records = await getAllObservations();
-  byId("nav-count").textContent = records.length;
-  return records;
+async function openReport() { const p = requireProject(); state.report = await buildReport(p, await getSnapshot()); $("report-content").innerHTML = state.report.content; showView("report-view"); }
+async function openDemo() {
+  let project = state.snapshot.projects.find((p) => p.isDemo);
+  if (!project) { const demo = await createDemo(); await applyImport(demo); project = demo.projects[0]; await refresh(); }
+  selectProject(project.id); showView("project-view"); notify("Открыт учебный пример. Начните с результатов проверки.");
 }
-
-function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+async function addDemoExample() {
+  const p = requireProject(); if (!p.isDemo) return;
+  fillForm({ id: id(), auditProjectId: p.id, routePartId: p.parts.at(-1).id, status: "DRAFT", observedAt: nowISO(), latitude: 55.7525, longitude: 37.6175, finding: "PRESENT", restrictionType: "RESTRICTED", alternativeAccess: "UNKNOWN", reporterAlias: "Учебный участник", experienceSource: "DIRECT_OBSERVATION", locationDescription: "Учебная запись: вход в центр", comment: "Демо. Условный вход со ступенью; альтернативу нужно проверить.", contextType: "STREET", measurements: {} }, [await demoPhoto("Учебная запись: вход")]);
 }
+function connectionStatus() { $("connection-badge").textContent = navigator.onLine ? "На устройстве" : "Без сети"; }
 
-function dataURLToBlob(dataURL) {
-  const [header, encoded] = dataURL.split(",");
-  const mime = header.match(/data:([^;]+)/)?.[1] || "application/octet-stream";
-  const binary = atob(encoded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return new Blob([bytes], { type: mime });
-}
-
-function downloadBlob(blob, name) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-async function exportBackup() {
-  const button = byId("export-backup");
-  button.disabled = true;
-  button.textContent = "Готовим копию…";
-  try {
-    const records = await getAllObservations();
-    const observations = [];
-    for (const record of records) {
-      const photos = await getObservationPhotos(record.id);
-      observations.push({
-        record,
-        photos: await Promise.all(photos.map(async ({ blob, ...photo }) => ({ ...photo, dataURL: await blobToDataURL(blob) }))),
-      });
-    }
-    const backup = { schema: "urban-accessibility-field-backup", version: 1, exportedAt: new Date().toISOString(), observations };
-    downloadBlob(new Blob([JSON.stringify(backup)], { type: "application/json" }), downloadName("urbanaccess-backup", "json"));
-    showToast("Полная резервная копия скачана");
-  } catch (error) {
-    console.error(error);
-    showToast("Не удалось подготовить резервную копию");
-  } finally {
-    button.disabled = false;
-    button.textContent = "Скачать полную копию";
-  }
-}
-
-async function exportGeoJSON() {
-  const records = await getAllObservations();
-  const features = records.map(observationToGeoJSONFeature).filter(Boolean);
-  const collection = { type: "FeatureCollection", features };
-  downloadBlob(new Blob([JSON.stringify(collection, null, 2)], { type: "application/geo+json" }), downloadName("urbanaccess-observations", "geojson"));
-  showToast(`Экспортировано точек: ${features.length}`);
-}
-
-async function exportCSV() {
-  const records = await getAllObservations();
-  const csv = `\uFEFF${observationsToCSV(records)}`;
-  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), downloadName("urbanaccess-observations", "csv"));
-  showToast(`Экспортировано строк: ${records.length}`);
-}
-
-async function importBackup(file) {
-  try {
-    const backup = JSON.parse(await file.text());
-    if (backup.schema !== "urban-accessibility-field-backup" || backup.version !== 1 || !Array.isArray(backup.observations)) {
-      throw new Error("Неподдерживаемый формат");
-    }
-    if (!window.confirm(`Восстановить ${backup.observations.length} наблюдений? Записи с одинаковыми ID будут заменены.`)) return;
-    for (const item of backup.observations) {
-      if (!item.record?.id) throw new Error("В записи отсутствует ID");
-      const photos = (item.photos || []).map(({ dataURL, ...photo }) => {
-        const blob = dataURLToBlob(dataURL);
-        return { ...photo, blob, size: blob.size, observationId: item.record.id };
-      });
-      await saveObservation({ ...item.record, photoCount: photos.length }, photos);
-    }
-    await refreshCount();
-    await renderRecords();
-    showToast("Резервная копия восстановлена");
-  } catch (error) {
-    console.error(error);
-    showToast("Файл не похож на резервную копию UrbanAccess");
-  } finally {
-    byId("import-backup").value = "";
-  }
-}
-
-function bindEvents() {
-  window.addEventListener("online", updateConnectionBadge);
-  window.addEventListener("offline", updateConnectionBadge);
-  window.addEventListener("resize", () => requestAnimationFrame(renderMap));
+async function init() {
+  initCollector({ getProject, notify, showView, onSaved: async () => { await refresh(); showView("records-view"); } });
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
-  document.querySelectorAll('input[name="finding"]').forEach((input) => input.addEventListener("change", setFindingVisibility));
-  byId("locate-button").addEventListener("click", requestLocation);
-  byId("photo-input").addEventListener("change", (event) => addPhotos(event.target.files));
-  byId("save-draft").addEventListener("click", () => persistObservation(false));
-  form.addEventListener("submit", (event) => { event.preventDefault(); persistObservation(true); });
-  byId("reset-form").addEventListener("click", resetForm);
-  byId("new-record").addEventListener("click", () => { resetForm(); showView("collector-view"); });
-  byId("map").addEventListener("click", movePointFromMap);
-  byId("zoom-in").addEventListener("click", () => { state.mapZoom = Math.min(20, state.mapZoom + 1); renderMap(); });
-  byId("zoom-out").addEventListener("click", () => { state.mapZoom = Math.max(14, state.mapZoom - 1); renderMap(); });
-  [byId("latitude"), byId("longitude")].forEach((input) => input.addEventListener("change", () => {
-    stopLocationSearch();
-    byId("position-source").value = "MANUAL";
-    byId("location-status").textContent = "Точка указана вручную";
-    renderMap();
-  }));
-  byId("export-backup").addEventListener("click", exportBackup);
-  byId("export-geojson").addEventListener("click", exportGeoJSON);
-  byId("export-csv").addEventListener("click", exportCSV);
-  byId("import-backup").addEventListener("change", (event) => event.target.files[0] && importBackup(event.target.files[0]));
-}
-
-async function initialize() {
-  updateConnectionBadge();
-  bindEvents();
-  resetForm();
-  try {
-    await openDatabase();
-    await refreshCount();
-  } catch (error) {
-    console.error(error);
-    showToast("Локальное хранилище недоступно в этом браузере");
-  }
+  on("project-select", "change", (event) => selectProject(event.target.value));
+  on("new-project", "click", () => openProjectForm()); on("welcome-create", "click", () => openProjectForm());
+  on("cancel-project", "click", () => { $("project-form").hidden = true; }); on("project-form", "submit", submitProject);
+  on("open-demo", "click", openDemo); on("new-record", "click", () => { resetForm(); showView("collector-view"); });
+  on("export-assignment", "click", () => exportBundle("ASSIGNMENT")); on("export-project", "click", () => exportBundle("RESULTS")); on("export-backup", "click", () => exportBundle("BACKUP"));
+  on("import-open", "click", () => $("import-backup").click()); on("import-backup", "change", previewImport);
+  on("back-results", "click", () => showView("records-view"));
+  on("close-photo", "click", () => $("photo-dialog").close());
+  on("print-report", "click", async () => { await Promise.all([...$("report-content").querySelectorAll("img")].map((img) => img.decode().catch(() => {}))); window.print(); });
+  on("download-report", "click", () => { if (state.report) download(state.report.html, downloadName("urbanaccess-report", "html"), "text/html;charset=utf-8"); });
+  window.addEventListener("online", connectionStatus); window.addEventListener("offline", connectionStatus); connectionStatus();
+  await refresh(); resetForm();
+  if (new URLSearchParams(location.search).has("demo")) await openDemo();
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch((error) => console.warn("Service worker:", error));
+    const existing = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.register("./sw.js").catch(() => notify("Офлайн-копия пока не готова. Откройте страницу ещё раз при наличии сети."));
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (existing) notify("Доступно обновление. Сохраните черновик и перезагрузите страницу."); });
   }
 }
-
-initialize();
+init().catch(fail);

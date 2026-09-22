@@ -1,4 +1,4 @@
-const SHELL_CACHE = "urbanaccess-shell-v5";
+const SHELL_CACHE = "urbanaccess-shell-v6-ngo-pilot";
 const TILE_CACHE = "urbanaccess-map-tiles-v1";
 const SHELL_FILES = [
   "./",
@@ -10,6 +10,13 @@ const SHELL_FILES = [
   "./src/db.js",
   "./src/domain.js",
   "./src/location.js",
+  "./src/collector.js",
+  "./src/pilot.js",
+  "./src/exchange.js",
+  "./src/ui.js",
+  "./src/map.js",
+  "./src/demo.js",
+  "./src/report.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -53,11 +60,10 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin === self.location.origin) {
     event.respondWith((async () => {
-      const cached = await caches.match(event.request);
+      const cache = await caches.open(SHELL_CACHE);
+      const cached = await cache.match(event.request, { ignoreSearch: event.request.mode === "navigate" });
       if (cached) return cached;
       const response = await fetch(event.request);
-      const cache = await caches.open(SHELL_CACHE);
-      cache.put(event.request, response.clone());
       return response;
     })());
   }

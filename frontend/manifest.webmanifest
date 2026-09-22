@@ -1,7 +1,7 @@
 {
-  "name": "UrbanAccess — полевые наблюдения",
+  "name": "UrbanAccess — проверка маршрутов",
   "short_name": "UrbanAccess",
-  "description": "Offline-first сбор наблюдений о городской доступности",
+  "description": "Совместная проверка конкретных маршрутов с НКО и сообществами",
   "lang": "ru",
   "start_url": "./",
   "scope": "./",

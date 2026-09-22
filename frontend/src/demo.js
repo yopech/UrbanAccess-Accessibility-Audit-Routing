@@ -1,0 +1,20 @@
+import { id, nowISO } from "./pilot.js";
+export function demoPhoto(label = "Полевое наблюдение") {
+  const canvas = document.createElement("canvas"); canvas.width = 720; canvas.height = 420;
+  const ctx = canvas.getContext("2d"); ctx.fillStyle = "#edf2e7"; ctx.fillRect(0, 0, 720, 420);
+  ctx.strokeStyle = "#b7c8bc"; ctx.lineWidth = 44; ctx.beginPath(); ctx.moveTo(70, 300); ctx.lineTo(280, 300); ctx.lineTo(450, 155); ctx.lineTo(650, 155); ctx.stroke();
+  ctx.fillStyle = "#d67245"; ctx.beginPath(); ctx.arc(450, 155, 24, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#12372a"; ctx.font = "bold 27px sans-serif"; ctx.fillText("ДЕМО · условная иллюстрация", 28, 46); ctx.font = "22px sans-serif"; ctx.fillText(label, 28, 380);
+  return new Promise((resolve) => canvas.toBlob((blob) => resolve({ name: "Учебная иллюстрация.png", blob, type: "image/png", size: blob.size }), "image/png"));
+}
+export async function createDemo() {
+  const at = nowISO(), projectId = id();
+  const parts = ["Остановка", "Переход", "Подход к центру", "Вход в центр"].map((label, i) => ({ id: id(), label, coverage: i < 2 ? "CHECKED" : i === 2 ? "PARTIAL" : "UNCHECKED", checkedAt: i < 2 ? at : null, checkedBy: i < 2 ? "Демо-координатор" : "", coverageNote: i < 2 ? "Учебный пример обследования части пути." : "Нужно проверить на месте." }));
+  const project = { id: projectId, title: "Демо: от остановки до общественного центра", partnerName: "Учебное сообщество", coordinator: "Демо-координатор", originDescription: "Остановка «Начало»", destinationDescription: "Главный вход общественного центра", targetRequirements: "Самостоятельный проезд на ручной коляске, без ступеней и посторонней помощи.", objective: "Узнать, где нужен обход и каких сведений ещё не хватает.", instructions: "Это вымышленный пример. Изучите результаты, добавьте учебную запись и откройте отчёт.", status: "REVIEW", isDemo: true, parts, createdAt: at, updatedAt: at, coverageConfirmed: true, conclusion: "UNKNOWN", conclusionNote: "Есть противоречие у ворот, вход ещё не обследован. Вывод о всём пути делать рано.", conclusionAt: at, nextCheckAt: "" };
+  const common = { auditProjectId: projectId, isDemo: true, status: "READY", observedAt: at, createdAt: at, updatedAt: at, positionSource: "MANUAL", contextType: "STREET", measurements: {}, reporterAlias: "Учебный участник", experienceSource: "DIRECT_OBSERVATION", reviewStatus: "ACCEPTED", reviewer: "Демо-координатор", reviewedAt: at, reviewComment: "Учебное решение, не обследование реальной территории.", reviewHistory: [], photoCount: 1 };
+  const a = { ...common, id: id(), routePartId: parts[0].id, latitude: 55.75, longitude: 37.615, finding: "CLEAR_PASSAGE", restrictionType: null, alternativeAccess: null, barrierType: null, locationDescription: "Площадка остановки", comment: "На учебной схеме площадка ровная, без ступеней." };
+  const b = { ...common, id: id(), routePartId: parts[1].id, latitude: 55.751, longitude: 37.616, finding: "PRESENT", restrictionType: "RESTRICTED", alternativeAccess: "DETOUR", alternativeDescription: "Учебный обход через наземный переход у соседнего перекрёстка; его нужно включить в проверку пути.", barrierType: "STAIRS", locationDescription: "Спуск в переход", comment: "Условный пример: лестница и другой способ пересечь улицу." };
+  const c = { ...common, id: id(), routePartId: parts[2].id, latitude: 55.752, longitude: 37.617, finding: "PRESENT", restrictionType: "BLOCKED", alternativeAccess: "UNKNOWN", barrierType: "GATE", locationDescription: "Калитка перед центром", reviewStatus: "NEEDS_CLARIFICATION", reviewComment: "Другой участник сообщает, что проход открыт. Нужно уточнить время и сторону." };
+  const d = { ...c, id: id(), previousObservationId: c.id, finding: "ABSENT", restrictionType: null, alternativeAccess: null, reporterAlias: "Второй учебный участник", comment: "Условное противоречие: по этой записи калитка открыта." };
+  return { projects: [project], observations: await Promise.all([a, b, c, d].map(async (record) => ({ record, photos: [await demoPhoto(record.locationDescription)] }))) };
+}

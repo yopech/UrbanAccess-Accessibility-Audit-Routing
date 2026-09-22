@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Optional browser-test dependencies and local test artifacts
+node_modules/
+test-results/
+playwright-report/

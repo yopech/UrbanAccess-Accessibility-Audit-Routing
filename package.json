@@ -1,0 +1,10 @@
+{
+  "name": "urbanaccess-pilot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test frontend/tests/pilot.test.mjs",
+    "test:browser": "node frontend/tests/browser.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
