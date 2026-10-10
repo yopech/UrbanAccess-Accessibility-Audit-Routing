@@ -4,7 +4,49 @@
   "type": "module",
   "scripts": {
     "test": "node --test frontend/tests/pilot.test.mjs",
-    "test:browser": "node frontend/tests/browser.mjs"
+    "test:browser": "node frontend/tests/browser.mjs",
+    "test:dictation": "node frontend/tests/dictation-browser.mjs",
+    "typecheck:storage": "tsc --project frontend/tsconfig.storage.json --noEmit",
+    "test:storage": "node frontend/tests/audit-storage.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc --project frontend/tsconfig.sw.json && vite build && node scripts/copy-pages-entry.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit && tsc --project frontend/tsconfig.sw.json",
+    "test:editor": "vitest run",
+    "test:phase0": "node frontend/tests/phase0-browser.mjs",
+    "test:m1": "node frontend/tests/m1-browser.mjs",
+    "test:voice": "node frontend/tests/voice-browser.mjs",
+    "test:media": "node frontend/tests/media-browser.mjs",
+    "test:review": "node frontend/tests/review-browser.mjs",
+    "test:backup": "node frontend/tests/backup-browser.mjs",
+    "test:zones": "node frontend/tests/zones-browser.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@radix-ui/react-accordion": "^1.2.21",
+    "@radix-ui/react-dialog": "^1.2.0",
+    "docx": "^9.9.0",
+    "lucide-react": "^1.53.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1"
+  }
 }

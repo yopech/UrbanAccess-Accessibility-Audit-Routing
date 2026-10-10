@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { readFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root=fileURLToPath(new URL('../../',import.meta.url));let server,browser;const errors=[];let count=0;
+const pass=text=>console.log(`PASS ${++count}: ${text}`);
+try {
+  execFileSync(process.execPath,[path.join(root,'node_modules/vite/bin/vite.js'),'build'],{cwd:root,env:{...process.env,URBANACCESS_BASE:'/frontend/',URBANACCESS_VOICE_TEST_BUILD:'1'},stdio:'pipe'});
+  server=createServer(async(req,res)=>{const file=new URL(req.url,'http://localhost').pathname.replace(/^\/frontend\//,'')||'index.html';if(file.includes('..')){res.writeHead(404);res.end();return;}try{res.setHeader('content-type',file.endsWith('.html')?'text/html':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'application/octet-stream');res.end(await readFile(path.join(root,'dist/frontend',file)));}catch{res.writeHead(404);res.end();}});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}/frontend/`;
+  const {chromium}=await import(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');browser=await chromium.launch();const context=await browser.newContext({viewport:{width:320,height:900}});context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
+  const qaPage=await context.newPage();await qaPage.goto(`${base}tests/voice.html`);await qaPage.waitForFunction(()=>window.voiceQA);
+  const fixture=await qaPage.evaluate(async()=>{
+    const qa=window.voiceQA;const actor={id:crypto.randomUUID(),name:'Инспектор'};const at=new Date().toISOString();const old=qa.createZ2Audit({object:{name:'Объект с четырьмя зонами',address:'Москва'},author:actor,inspectedOn:'2026-10-10',purpose:'Проверка'}, {auditId:crypto.randomUUID(),objectId:crypto.randomUUID(),zoneId:crypto.randomUUID(),elementIds:qa.Z2_TEMPLATE.elements.map(()=>crypto.randomUUID())},at);
+    await qa.audits.commit({auditId:old.id,expectedRevision:0,actor,transactionId:crypto.randomUUID(),commands:[{type:'createAudit',audit:old}]});await qa.captureDocument(old.id,1);
+    const editor=qa.createEditor(await qa.audits.load(old.id));
+    for(const zone of qa.ZONE_TEMPLATES.filter(zone=>zone.code!=='Z2'))editor.enqueue({type:'initializeZone',code:zone.code,id:crypto.randomUUID(),elementIds:zone.elements.map(()=>crypto.randomUUID())});
+    const canvas=document.createElement('canvas');canvas.width=120;canvas.height=60;canvas.getContext('2d').fillRect(0,0,120,60);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    for(const zone of Object.values(editor.getSnapshot().value.zones)) {
+      const elementId=zone.elementIds[0];editor.enqueue({type:'updateElement',elementId,patch:{comment:`Комментарий ${zone.code}`}});
+      editor.enqueue({type:'attachPhoto',photo:{id:crypto.randomUUID(),auditId:old.id,elementId,measurementIds:[],findingIds:[],sha256,bytes:blob.size,width:120,height:60,mime:'image/png',caption:zone.code,createdAt:at,blob}});
+    }
+    const entry=Object.values(editor.getSnapshot().value.elements).find(e=>e.type==='door');editor.enqueue({type:'recordMeasurement',id:crypto.randomUUID(),elementId:entry.id,parameter:'doorWidth',text:'85',unit:'cm'});
+    const pathElement=Object.values(editor.getSnapshot().value.elements).find(e=>e.type==='pedestrianPath');editor.enqueue({type:'recordMeasurement',id:crypto.randomUUID(),elementId:pathElement.id,parameter:'pathWidth',text:'150',unit:'cm'});
+    const door=Object.values(editor.getSnapshot().value.elements).find(e=>e.type==='internalDoor');editor.enqueue({type:'recordMeasurement',id:crypto.randomUUID(),elementId:door.id,parameter:'doorWidth',text:'0,85',unit:'m'});
+    const toilet=Object.values(editor.getSnapshot().value.elements).find(e=>e.type==='accessibleToilet');editor.enqueue({type:'setElementCheck',elementId:toilet.id,parameter:'grabBarsFixed',value:'present'});
+    if((await editor.flush()).kind!=='saved')throw new Error('fixture save');const audit=await qa.audits.load(old.id);await qa.captureDocument(audit.id,audit.revision);
+    const prepared=await qa.prepareAuditBackup(audit.id);const inspected=await qa.inspectAuditBackup(prepared.file);const copy=await qa.restoreAuditBackup(prepared.file,'duplicate');const copied=await qa.prepareAuditBackup(copy.id);const source=JSON.parse(await prepared.file.text());const restored=JSON.parse(await copied.file.text());
+    const imagesEqual=source.mediaPayload.every(image=>restored.mediaPayload.some(other=>other.dataURL===image.dataURL));const linked=Object.values(copy.zones).every(zone=>zone.elementIds.every(id=>copy.elements[id]?.zoneId===zone.id));const originalUnchanged=JSON.stringify(audit)===JSON.stringify(await qa.audits.load(audit.id));
+    return {id:audit.id,copyId:copy.id,inspected,imagesEqual,linked,originalUnchanged,documents:restored.documents.map(doc=>doc.scopeLabel),zones:Object.keys(copy.zones).length,checks:Object.values(copy.elements).find(e=>e.type==='accessibleToilet').checks,measurement:Object.values(copy.measurements).find(measurement=>copy.elements[measurement.elementId].type==='internalDoor').normalized.value};
+  });
+  assert.equal(fixture.zones,4);assert.equal(fixture.inspected.elements,12);assert.equal(fixture.inspected.photos,4);assert.ok(fixture.imagesEqual&&fixture.linked&&fixture.originalUnchanged);assert.equal(fixture.measurement,85);assert.equal(fixture.checks.grabBarsFixed,'present');assert.equal(fixture.documents.length,2);assert.ok(fixture.documents.some(label=>label==='Черновик. Фрагмент обследования: Входная группа Z2'));pass('all-zone backup duplicates graph, raw measurements, checks and binary photos; old Z2 snapshot remains compatible');
+  const page=await context.newPage();page.setDefaultTimeout(10000);await page.goto(`${base}#/audits/${fixture.id}`);await page.locator('[data-save-state=saved]').waitFor();
+  for(const [label,first] of [['Z1 Территория','Машино-место для МГН'],['Z3 Внутри','Внутренний коридор'],['Z4 Санузел','Универсальная кабина санузла'],['Z2 Вход','Входная дверь']]) {await page.getByRole('button',{name:label,exact:true}).click();await page.locator('.element-card').first().getByRole('button',{name:new RegExp(first)}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
+  pass('all four zone tabs render isolated elements and fit 320px without page overflow');
+  await page.getByRole('button',{name:'Z3 Внутри',exact:true}).click();await page.getByLabel('Ширина коридора',{exact:true}).fill('140');await page.getByRole('button',{name:'Z4 Санузел',exact:true}).click();await page.getByRole('button',{name:'Z3 Внутри',exact:true}).click();assert.equal(await page.getByLabel('Ширина коридора',{exact:true}).inputValue(),'140');assert.equal(await page.locator('[data-norm-status=warn]').count(),1);
+  await page.getByRole('button',{name:'Данные объекта',exact:true}).click();await page.getByRole('button',{name:'Сохранить реквизиты',exact:true}).click();await page.locator('[data-save-state=saved]').waitFor();
+  await page.getByRole('button',{name:/Перейти к сводке/}).click();await page.getByRole('heading',{name:'Готовность обследования',exact:true}).waitFor();await page.getByRole('button',{name:/Внутренний коридор: Укажите, применим/}).click();await page.getByRole('button',{name:'Z3 Внутри',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Z3 Внутри',exact:true}).getAttribute('aria-current'),'page');assert.equal(await page.getByLabel('Ширина коридора',{exact:true}).inputValue(),'140');pass('flush on zone switching, object edits preserve scope, review links open the correct zone and field');
+  await page.waitForFunction(()=>navigator.serviceWorker.controller);await context.setOffline(true);await page.reload();await page.locator('[data-save-state=saved]').waitFor();await page.getByRole('button',{name:'Z1 Территория',exact:true}).click();await page.getByLabel('Ширина машино-места',{exact:true}).waitFor();await mkdir(path.join(root,'artifacts/zones'),{recursive:true});await page.screenshot({path:path.join(root,'artifacts/zones/z1-320.png'),fullPage:true});
+  await page.getByRole('button',{name:'Z4 Санузел',exact:true}).click();await page.getByLabel('Ширина санузла',{exact:true}).waitFor();await page.screenshot({path:path.join(root,'artifacts/zones/z4-320.png'),fullPage:true});pass('new zones work after offline PWA reload');
+  // Export the frozen four-zone snapshot through the real offline interface.
+  await page.goto(`${base}#/audits/${fixture.id}/review`);
+  await page.getByRole('button',{name:'DOCX этой редакции'}).first().waitFor();
+  const documentDownload=page.waitForEvent('download');
+  await page.getByRole('button',{name:'DOCX этой редакции'}).first().click();
+  const objectDownload=await documentDownload;
+  await objectDownload.saveAs(path.join(root,'artifacts/zones/object-act.docx'));
+  assert.equal(await objectDownload.failure(),null);
+  execFileSync('/Users/yopech/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3',[path.join(root,'frontend/tests/verify-object-docx.py'),path.join(root,'artifacts/zones/object-act.docx')],{stdio:'inherit'});
+  await page.getByRole('button',{name:'Печатная версия этой редакции'}).first().click();
+  const printFrame=page.frameLocator('iframe');
+  await printFrame.getByRole('heading',{name:'Фототаблица',exact:true}).waitFor();
+  assert.equal(await printFrame.locator('img').count(),4);
+  assert.equal(await printFrame.locator('.photo-table').count(),1);
+  for(const code of ['Z1','Z2','Z3','Z4'])assert.ok(await printFrame.getByRole('heading').filter({hasText:code}).count());
+  await page.keyboard.press('Escape');
+  pass('four-zone DOCX and two-column local print include all four photos offline');
+  await context.setOffline(false);await page.goto(base);await page.getByRole('button',{name:'Новое обследование',exact:true}).click();await page.getByLabel('Название объекта',{exact:true}).fill('Ленивая инициализация');await page.getByLabel('Адрес',{exact:true}).fill('Москва');await page.getByLabel('Исполнитель',{exact:true}).fill('Инспектор');await page.getByLabel('Проверяем только входную группу Z2').check();await page.getByRole('button',{name:'Создать обследование',exact:true}).click();await page.locator('[data-save-state=saved]').waitFor();
+  const readZones=()=>page.evaluate(async()=>{const request=indexedDB.open('urban-accessibility-field-v1');const db=await new Promise(resolve=>request.onsuccess=()=>resolve(request.result));try{const get=db.transaction('audits').objectStore('audits').get(location.hash.split('/')[2]);return await new Promise(resolve=>get.onsuccess=()=>resolve(Object.values(get.result.zones).map(zone=>zone.code)));}finally{db.close();}});
+  assert.deepEqual(await readZones(),['Z2']);await page.getByRole('button',{name:'Z1 Территория',exact:true}).click();await page.getByLabel('Ширина машино-места',{exact:true}).waitFor();assert.deepEqual(await readZones(),['Z2','Z1']);await page.getByRole('button',{name:'Z2 Вход',exact:true}).click();await page.getByRole('button',{name:'Z1 Территория',exact:true}).click();assert.deepEqual(await readZones(),['Z2','Z1']);pass('old scope expands only on demand and repeated zone selection creates no duplicate');
+  assert.deepEqual(errors,[]);console.log(`${count} zones browser groups passed.`);
+} finally {await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));}

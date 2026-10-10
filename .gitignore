@@ -221,3 +221,8 @@ __marimo__/
 node_modules/
 test-results/
 playwright-report/
+
+# Generated builds and local QA files
+dist/
+artifacts/
+.DS_Store

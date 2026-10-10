@@ -268,3 +268,8 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflo
   main { padding: 0; width: 100%; } .audit-report { margin: 0; padding: 0; } .report-card { box-shadow: none; }
   h2,h3 { break-after: avoid; } .report-photos img { max-height: 150px; } @page { size: A4; margin: 15mm; }
 }
+
+.dictation-controls { display: grid; gap: 10px; min-width: 0; }
+.dictation-controls p { margin: 0; overflow-wrap: anywhere; }
+.dictation-controls .button { min-height: 48px; white-space: normal; }
+.dictation-controls [aria-pressed="true"] { background: #c85a35; color: white; }

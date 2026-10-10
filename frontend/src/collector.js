@@ -1,3 +1,5 @@
+import { beginLegacyOperation, endLegacyOperation, legacyFormSaved, legacyFormChanged } from "./legacy-lifecycle.js";
+import { initDictation } from "./dictation.js";
 import {
   ALTERNATIVE_ACCESS_LABELS,
   BARRIER_LABELS,
@@ -23,6 +25,8 @@ import {
 } from "./location.js";
 
 let hooks;
+let dictation;
+export function cancelDictation() { dictation?.cancel(); }
 const byId = (id) => document.getElementById(id);
 const form = byId("observation-form");
 const DEFAULT_MAP_CENTER = { latitude: 55.7558, longitude: 37.6176 };
@@ -80,6 +84,7 @@ function stopLocationSearch() {
 }
 
 export function resetForm() {
+  cancelDictation();
   stopLocationSearch();
   revokeUrls(state.previewUrls);
   state.photos = [];
@@ -184,6 +189,7 @@ function displayErrors(errors) {
 }
 
 async function persistObservation(ready) {
+  if (dictation?.isActive()) { showToast("Завершите диктовку и проверьте текст перед сохранением."); return; }
   const observation = readObservation();
   const errors = validatePilotObservation(observation, state.photos.length, ready, hooks.getProject());
   if (Object.keys(errors).length) {
@@ -193,6 +199,7 @@ async function persistObservation(ready) {
 
   const button = ready ? byId("save-ready") : byId("save-draft");
   button.disabled = true;
+  beginLegacyOperation();
   try {
     const now = new Date().toISOString();
     observation.status = ready ? "READY" : "DRAFT";
@@ -200,6 +207,7 @@ async function persistObservation(ready) {
     observation.updatedAt = now;
     observation.photoCount = state.photos.length;
     await saveObservation(observation, state.photos.map(({ previewUrl, ...photo }) => photo));
+    legacyFormSaved(byId("observation-form"));
     showToast(ready ? "Наблюдение готово к проверке" : "Черновик сохранён");
     resetForm();
     localStorage.setItem("urbanaccess-reporter", observation.reporterAlias);
@@ -209,6 +217,7 @@ async function persistObservation(ready) {
     console.error(error);
     showToast(error.message || "Не удалось сохранить. Проверьте свободное место.");
   } finally {
+    endLegacyOperation();
     button.disabled = false;
   }
 }
@@ -466,10 +475,16 @@ export function fillForm(record, photos, recheck = false) {
   setFindingVisibility();
   renderPhotos();
   showView("collector-view");
+  legacyFormChanged(form);
+}
+
+export function disposeCollector() {
+  cancelDictation(); stopLocationSearch(); revokeUrls(state.previewUrls); revokeUrls(state.listUrls);
 }
 
 export function initCollector(config) {
   hooks = config;
+  dictation = initDictation({ field: byId("comment"), button: byId("dictate-comment"), status: byId("dictation-status"), preview: byId("dictation-preview") });
   document.querySelectorAll('input[name="finding"]').forEach((input) => input.addEventListener("change", setFindingVisibility));
   byId("locate-button").addEventListener("click", requestLocation);
   byId("photo-input").addEventListener("change", (event) => addPhotos(event.target.files));

@@ -1,31 +1,6 @@
+import { openDatabase } from "./storage/database.js";
+export { openDatabase };
 export const DB_NAME = "urban-accessibility-field-v1";
-const DB_VERSION = 2;
-let databasePromise;
-export function openDatabase() {
-  if (databasePromise) return databasePromise;
-  databasePromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("observations")) {
-        const store = db.createObjectStore("observations", { keyPath: "id" });
-        store.createIndex("observedAt", "observedAt");
-        store.createIndex("status", "status");
-      }
-      if (!db.objectStoreNames.contains("photos")) db.createObjectStore("photos", { keyPath: "id" }).createIndex("observationId", "observationId");
-      if (!db.objectStoreNames.contains("projects")) db.createObjectStore("projects", { keyPath: "id" });
-      // Keep every v1 observation and photo, including unattached records.
-    };
-    request.onsuccess = () => {
-      const db = request.result;
-      db.onversionchange = () => { db.close(); databasePromise = null; };
-      resolve(db);
-    };
-    request.onerror = () => { databasePromise = null; reject(request.error); };
-    request.onblocked = () => { databasePromise = null; reject(new Error("Закройте другие вкладки UrbanAccess и перезагрузите страницу для обновления хранилища.")); };
-  });
-  return databasePromise;
-}
 function result(request) { return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
 function done(tx) { return new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || new Error("Сохранение отменено")); }); }
 async function all(store) { const db = await openDatabase(); return result(db.transaction(store).objectStore(store).getAll()); }

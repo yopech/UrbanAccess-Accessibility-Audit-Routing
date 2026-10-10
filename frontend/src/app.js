@@ -1,7 +1,8 @@
+import { beginLegacyOperation, endLegacyOperation, legacyFormSaved } from "./legacy-lifecycle.js";
 import { getSnapshot, saveProject, saveRecords, applyImport, deleteObservation } from "./db.js";
 import { PROJECT_STATUSES, REVIEW_STATUSES, EXPERIENCE_SOURCES, COVERAGE_STATUSES, CONCLUSIONS, DEFAULT_PARTS, id, nowISO, validateProject, validatePilotObservation, reviewObservation, projectRecords, auditSummary, saveConclusion, supersedeRecord, updateCoverage } from "./pilot.js";
 import { FINDING_LABELS, RESTRICTION_LABELS, ALTERNATIVE_ACCESS_LABELS, CONTEXT_LABELS, toLocalDateTimeInput, observationsToCSV, observationToGeoJSONFeature, downloadName } from "./domain.js";
-import { initCollector, resetForm, fillForm, renderMap } from "./collector.js";
+import { initCollector, resetForm, fillForm, renderMap, cancelDictation, disposeCollector } from "./collector.js";
 import { $, esc, options, dateLabel, errorMessage } from "./ui.js";
 import { createBundle, prepareImport, readBundle, download } from "./exchange.js";
 import { renderOverview } from "./map.js";
@@ -14,7 +15,7 @@ const getProject = () => state.snapshot.projects.find((p) => p.id === state.acti
 let toastTimer;
 function notify(message) { $("toast").textContent = message; $("toast").classList.add("is-visible"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("is-visible"), 4500); }
 function fail(error) { $("global-error").textContent = errorMessage(error); $("global-error").hidden = false; $("global-error").scrollIntoView({ block: "center" }); }
-function safe(fn) { return async (event) => { $("global-error").hidden = true; const button = event?.currentTarget; if (button?.tagName === "BUTTON") button.disabled = true; try { await fn(event); } catch (error) { fail(error); } finally { if (button?.tagName === "BUTTON") button.disabled = false; } }; }
+function safe(fn) { return async (event) => { $("global-error").hidden = true; const button = event?.currentTarget; if (button?.tagName === "BUTTON") button.disabled = true; beginLegacyOperation(); try { await fn(event); if (event?.type === "submit") legacyFormSaved(event.target); } catch (error) { fail(error); } finally { endLegacyOperation(); if (button?.tagName === "BUTTON") button.disabled = false; } }; }
 function on(id, event, fn) { $(id)?.addEventListener(event, safe(fn)); }
 function requireProject() { const project = getProject(); if (!project) throw new Error("Сначала создайте, загрузите или выберите маршрут."); return project; }
 function selectProject(value) { state.activeId = value; localStorage.setItem("urbanaccess-project", value || ""); resetForm(); renderProjects(); renderResults(); $("nav-count").textContent = String(projectRecords(getProject(), state.snapshot.observations).length); }
@@ -25,6 +26,7 @@ async function refresh() {
   $("nav-count").textContent = String(projectRecords(getProject(), state.snapshot.observations).length);
 }
 function showView(view) {
+  if (view !== "collector-view") cancelDictation();
   if (["collector-view", "records-view", "report-view"].includes(view) && !getProject()) { notify("Сначала создайте маршрут или откройте демо."); view = "project-view"; }
   state.view = view;
   document.querySelectorAll(".view").forEach((el) => { el.hidden = el.id !== view; });
@@ -187,6 +189,12 @@ async function addDemoExample() {
 }
 function connectionStatus() { $("connection-badge").textContent = navigator.onLine ? "На устройстве" : "Без сети"; }
 
+function disposeLegacy() {
+  clearTimeout(toastTimer); state.urls.forEach((url) => URL.revokeObjectURL(url)); state.urls = [];
+  disposeCollector();
+}
+document.addEventListener('legacy:dispose', disposeLegacy, { once: true });
+window.addEventListener('pagehide', disposeLegacy, { once: true });
 async function init() {
   initCollector({ getProject, notify, showView, onSaved: async () => { await refresh(); showView("records-view"); } });
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
@@ -203,10 +211,7 @@ async function init() {
   window.addEventListener("online", connectionStatus); window.addEventListener("offline", connectionStatus); connectionStatus();
   await refresh(); resetForm();
   if (new URLSearchParams(location.search).has("demo")) await openDemo();
-  if ("serviceWorker" in navigator) {
-    const existing = Boolean(navigator.serviceWorker.controller);
-    navigator.serviceWorker.register("./sw.js").catch(() => notify("Офлайн-копия пока не готова. Откройте страницу ещё раз при наличии сети."));
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (existing) notify("Доступно обновление. Сохраните черновик и перезагрузите страницу."); });
-  }
+
 }
-init().catch(fail);
+beginLegacyOperation();
+init().catch(fail).finally(endLegacyOperation);
