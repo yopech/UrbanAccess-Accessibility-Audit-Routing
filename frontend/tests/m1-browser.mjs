@@ -44,7 +44,7 @@ try {
   await door.getByLabel('Единица: Ширина дверного проёма в свету', {exact:true}).selectOption('mm');
   await door.getByLabel('Высота порога', { exact: true }).fill('0'); await door.getByLabel('Дополнительный комментарий').click(); await saved();
   await door.getByRole('button', {name:'Подтвердить карточку',exact:true}).click(); await saved();
-  assert.equal(await door.locator('.measurement-summary').innerText(),'90 см · 0 см'); assert.equal(await door.locator('.readiness-ready').innerText(),'Готово');
+  assert.equal(await door.locator('.measurement-summary').innerText(),'90 см · 0 см'); assert.equal(await door.locator('.element-summary .sr-only').innerText(),'Готово');
   await door.locator('.element-trigger').click(); await page.setViewportSize({width:390,height:844}); await page.screenshot({path:path.join(root,'artifacts/m1/editor-summary-390.png'),fullPage:true});
   await page.setViewportSize({width:1100,height:900}); await page.screenshot({path:path.join(root,'artifacts/m1/editor-summary-desktop.png'),fullPage:true}); await page.setViewportSize({width:320,height:800}); await door.locator('.element-trigger').click();
   await page.getByRole('button', { name: 'Входная дверь 2', exact: true }).click(); await page.getByRole('button', { name: /^Входная дверь 2/ }).waitFor();
@@ -77,7 +77,7 @@ try {
   pass('unfinished decimal draft is retained and restored instead of being replaced with zero');
   await door.getByLabel('Ширина дверного проёма в свету', { exact: true }).fill('950'); await door.getByLabel('Дополнительный комментарий').click(); await saved();
   await door.getByRole('button').first().focus(); await page.keyboard.press('Enter');
-  assert.equal(await door.getByLabel('Высота порога', { exact: true }).isVisible(), false);
+  await door.getByLabel('Высота порога', { exact: true }).waitFor({ state: 'hidden' });
   await page.keyboard.press('Enter'); await door.getByLabel('Высота порога', { exact: true }).waitFor();
   pass('Radix accordion supports keyboard toggling and keeps focus on the trigger');
   const layout = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > innerWidth,
@@ -85,7 +85,7 @@ try {
     targets: [...document.querySelectorAll('main button, main input:not([type=checkbox]), main select')].filter((e) => e.getClientRects().length && !e.closest('.audit-header') && e.getBoundingClientRect().height < 52).map((e) => e.outerHTML) }));
   assert.deepEqual(layout, { overflow: false, small: [], targets: [] });
   await mkdir(path.join(root, 'artifacts/m1'), { recursive: true }); await page.screenshot({ path: path.join(root, 'artifacts/m1/editor-320.png'), fullPage: true });
-  assert.equal(await door.locator('.readiness-dot').count(),1);
+  assert.equal(await door.locator('.readiness-dot').count(),0);
   const measureGrid = await door.locator('.measurement-grid').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length); assert.equal(measureGrid,2);
   assert.equal(await door.getByRole('radiogroup',{name:'Работоспособность',exact:true}).evaluate(e=>getComputedStyle(e).flexWrap),'nowrap');
   assert.equal(await door.locator('.measurement-help').count(),0);
@@ -99,7 +99,7 @@ try {
   pass('all specified active text color pairs have contrast >=7:1');
   await page.waitForFunction(() => navigator.serviceWorker.controller); await context.setOffline(true); await page.reload(); await saved();
   await door.getByLabel('Дополнительный комментарий').fill('Записано без сети'); await page.getByRole('button', { name: 'Все обследования', exact: true }).click();
-  await page.getByRole('button', { name: 'Открыть', exact: true }).click(); await saved();
+  await page.locator('.audit-list-card').first().locator('.audit-card-date').click(); await saved();
   assert.equal(await door.getByLabel('Дополнительный комментарий').inputValue(), 'Записано без сети');
   pass('offline reload and leaving the screen flush changes before navigation');
   await door.getByLabel('Ширина дверного проёма в свету',{exact:true}).fill('800'); await door.getByLabel('Ширина дверного проёма в свету',{exact:true}).blur(); await saved();
@@ -127,8 +127,9 @@ try {
 
   await page.getByRole('button', { name: 'Все обследования', exact: true }).click(); page.once('dialog', (dialog) => dialog.accept());
   await page.locator('.audit-card-menu > summary').first().click();
+  assert.equal(await page.evaluate(() => location.hash), '#/audits');
   await page.getByRole('button', { name: 'Архивировать', exact: true }).click(); await page.getByLabel('Показать архив').check();
-  await page.getByRole('button', { name: 'Открыть', exact: true }).click(); await saved(); assert.equal(await door.getByLabel('Дополнительный комментарий').isDisabled(), true);
+  await page.locator('.audit-card-link').first().click(); await saved(); assert.equal(await door.getByLabel('Дополнительный комментарий').isDisabled(), true);
   assert.ok((await readAudit()).archivedAt); pass('archive retains records and presents a read-only editor');
   await page.getByRole('button', {name:'Все обследования',exact:true}).click();
   await page.getByLabel('Показать архив').check();
@@ -136,7 +137,8 @@ try {
   await page.getByLabel('Поиск обследований').fill('Примерная'); assert.equal(await page.locator('.audit-list-card').count(),1);
   await mkdir(path.join(root,'artifacts/workspace'),{recursive:true});
   for(const width of [320,390,430]) { await page.setViewportSize({width,height:900}); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false); await page.screenshot({path:path.join(root,`artifacts/workspace/list-${width}.png`),fullPage:true}); }
-  await page.locator('.audit-card-menu > summary').first().click(); await page.getByRole('button',{name:'Дублировать',exact:true}).click();
+  await page.locator('.audit-card-menu > summary').first().click();
+  assert.equal(await page.evaluate(() => location.hash), '#/audits'); await page.getByRole('button',{name:'Дублировать',exact:true}).click();
   await page.getByRole('dialog').getByRole('button',{name:'Создать копию обследования',exact:true}).click(); await saved();
   const all = await page.evaluate(async()=>{const db=await new Promise(resolve=>{const r=indexedDB.open('urban-accessibility-field-v1',3);r.onsuccess=()=>resolve(r.result);});try{return await new Promise(resolve=>{const r=db.transaction('audits').objectStore('audits').getAll();r.onsuccess=()=>resolve(r.result);});}finally{db.close();}});
   assert.equal(all.length,2); assert.ok(all.find(a=>a.id===original.id).archivedAt); assert.equal(new Set(all.map(a=>a.id)).size,2);

@@ -9,6 +9,8 @@ import { PhotoPicker } from './photo-picker.js';
 import type { VoiceController } from '../voice/voice-controller.js';
 import { DictationButton } from '../voice/dictation-panel.js';
 import { PhotoGallery } from './photo-gallery.js';
+import { ElementIcon } from './element-icon.js';
+import { elementVisualStatus } from './element-visual-status.js';
 import { SegmentedControl } from './segmented-control.js';
 import { MeasurementField } from './measurement-field.js';
 import type { EditorController } from './editor-controller.js';
@@ -59,12 +61,12 @@ function ElementCard({ audit, element, controller, voice, focusField }: { focusF
       <label>Расположение<input value={element.location} placeholder="Например, главный вход справа" onChange={(event) => update({ location: event.target.value })} /></label>
       </details><div className="status-fields">
         <SegmentedControl label="Применимость" field="applicability" value={element.applicability} onChange={(applicability) => update({ applicability })} options={[
-          { value: 'unknown', label: 'Не определена' }, { value: 'applicable', label: 'Применим', accessibleLabel: 'Применим к этому входу' }, { value: 'not_applicable', label: 'Не применим' }]} />
+          { value: 'unknown', label: 'Не определена', variant: 'warning' }, { value: 'applicable', label: 'Применим', variant: 'neutral', accessibleLabel: 'Применим к этому входу' }, { value: 'not_applicable', label: 'Не применим', variant: 'neutral' }]} />
         <SegmentedControl label="Наличие" field="presence" value={element.presence} onChange={(presence) => update({ presence, ...(presence === 'absent' && element.operability === 'working' ? { operability: 'unknown' as const } : {}) })} options={[
-          { value: 'unknown', label: 'Не проверено' }, { value: 'present', label: 'Есть' }, { value: 'absent', label: 'Отсутствует' }]} />
+          { value: 'unknown', label: 'Не проверено', variant: 'warning' }, { value: 'present', label: 'Есть', variant: 'success' }, { value: 'absent', label: 'Отсутствует', variant: 'danger' }]} />
         <SegmentedControl label="Работоспособность" field="operability" value={element.operability} onChange={(operability) => update({ operability })} options={[
-          { value: 'unknown', label: 'Не проверена' }, { value: 'working', label: 'Исправен', disabled: element.presence === 'absent' }, { value: 'defective', label: 'Дефект' },
-          { value: 'not_working', label: 'Не работает' }, { value: 'not_applicable', label: 'Не применима' }]} />
+          { value: 'unknown', label: 'Не проверена', variant: 'warning' }, { value: 'working', label: 'Исправен', variant: 'success', disabled: element.presence === 'absent' }, { value: 'defective', label: 'Дефект', variant: 'danger' },
+          { value: 'not_working', label: 'Не работает', variant: 'danger' }, { value: 'not_applicable', label: 'Не применима', variant: 'neutral' }]} />
       </div>
       {element.presence === 'absent' && <p className="notice">Зафиксируйте отсутствие в замечании.</p>}
       {element.applicability === 'not_applicable' && <label>Причина неприменимости<textarea data-audit-field="exclusionReason" value={element.exclusionReason ?? ''} onChange={(event) => update({ exclusionReason: event.target.value })} /></label>}
@@ -72,7 +74,7 @@ function ElementCard({ audit, element, controller, voice, focusField }: { focusF
         {measurementParametersFor(element.type).map((parameter) => <MeasurementField key={parameter} audit={audit} element={element} parameter={parameter} controller={controller} />)}
       </div></section>}
       {element.presence !== 'absent' && element.applicability !== 'not_applicable' && (definitionFor(element.type).checks ?? []).map(parameter => <SegmentedControl key={parameter} label={CHECK_LABELS[parameter]} field={parameter} value={element.checks?.[parameter] ?? 'unknown'} options={[
-        { value: 'unknown', label: 'Не проверено' }, { value: 'present', label: 'Есть' }, { value: 'absent', label: 'Отсутствует' },
+        { value: 'unknown', label: 'Не проверено', variant: 'warning' }, { value: 'present', label: 'Есть', variant: 'success' }, { value: 'absent', label: 'Отсутствует', variant: 'danger' },
       ]} onChange={value => controller.enqueue({ type: 'setElementCheck', elementId: element.id, parameter, value })} />)}
       <label>Дополнительный комментарий<textarea aria-label="Дополнительный комментарий" value={element.comment} placeholder="Описание и детали обследования" onChange={(event) => update({ comment: event.target.value })} /></label>
       <details className="element-details" open={element.presence === 'absent' || focusField === 'finding' || Boolean(finding?.text || recommendation?.text)}><summary>Замечание и рекомендация</summary><label>Замечание{element.presence === 'absent' ? ' об отсутствии' : ''}<textarea data-audit-field="finding" value={finding?.text ?? ''} placeholder="Что обнаружили при обследовании" onChange={(event) => note(event.target.value)} /></label>
@@ -106,9 +108,9 @@ export function ElementAccordion({ audit, controller, voice, focusElementId, foc
   const [error, setError] = useState('');
   const change = async (next: string[]) => { void voice.stop(); const result = await controller.flush(); if (result.kind === 'saved') { setOpen(next); setError(''); } else setError('Сначала завершите сохранение или разрешите конфликт.'); };
   return <><Accordion type="multiple" value={open} onValueChange={(next) => { void change(next); }}>
-    {zone.elementIds.map((id) => { const element = audit.elements[id]!; return <AccordionItem key={id} value={id} className="element-card">
+    {zone.elementIds.map((id) => { const element = audit.elements[id]!; return <AccordionItem key={id} value={id} className="element-card border-l-4" data-visual-status={elementVisualStatus(audit, element)}>
       <AccordionTrigger className="element-trigger bg-white rounded-2xl border border-zinc-200/80 px-4 py-3.5">
-        <span className={`readiness-dot readiness-dot-${element.readiness}`} aria-hidden />
+        <ElementIcon elementType={element.type} />
         <span className="element-title"><strong className="text-[15px] font-semibold">{element.name || definitionFor(element.type).name}</strong>{element.location && <span className="element-location text-[13px] text-zinc-500">{element.location}</span>}
           {element.readiness === 'ready' && element.confirmation?.valueRevision === element.revision && <span className="measurement-summary">{definitionFor(element.type).parameters.map((parameter) => primaryMeasurement(audit, element.id, parameter)).filter((measurement) => !!measurement).map((measurement) => `${Number(measurement.normalized.value.toFixed(2)).toLocaleString('ru-RU')} ${measurement.normalized.unit === 'cm' ? 'см' : '%'}`).join(' · ')}</span>}
         </span>

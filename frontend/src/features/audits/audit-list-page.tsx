@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, ArrowRight, Archive, Camera, Search, MoreHorizontal } from 'lucide-react';
+import { Plus, Archive, Camera, Search, MoreHorizontal } from 'lucide-react';
 import { BackupDialog } from '../backup/backup-dialog.js';
 import { Button } from '../../components/ui/button.js';
 import { createZ2Audit, type Audit } from '../../domain/audit-model.js';
@@ -45,9 +45,9 @@ export function AuditListPage({ navigate }: { navigate: (hash: string) => void }
       {loading ? <p role="status">Загружаем обследования</p> : <>
         <div className="audit-list">{visible.map((audit) => {
           const elements = Object.values(audit.elements); const ready = elements.filter((element) => element.readiness === 'ready' && element.confirmation?.valueRevision === element.revision).length;
-          return <article className="audit-list-card" key={audit.id}>
-            <div className="audit-card-heading"><div><h2>{audit.object.name}</h2><p className="audit-card-address">{audit.object.address}</p></div>
-              <details className="audit-card-menu"><summary aria-label={`Действия: ${audit.object.name}`}><MoreHorizontal size={22} aria-hidden /></summary><div className="audit-card-menu-panel">
+          return <article className="audit-list-card" key={audit.id} onClick={() => navigate(`#/audits/${audit.id}`)}>
+            <div className="audit-card-heading"><div><h2><a className="audit-card-link" href={`#/audits/${audit.id}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); navigate(`#/audits/${audit.id}`); }}>{audit.object.name}</a></h2><p className="audit-card-address">{audit.object.address}</p></div>
+              <details className="audit-card-menu" onClick={(event) => event.stopPropagation()}><summary aria-label={`Действия: ${audit.object.name}`}><MoreHorizontal size={22} aria-hidden /></summary><div className="audit-card-menu-panel">
                 <BackupDialog auditId={audit.id} triggerLabel="Экспорт бэкапа (.ngo)" onRestored={(id) => navigate(`#/audits/${id}`)} />
                 <BackupDialog auditId={audit.id} triggerLabel="Дублировать" intent="duplicate" onRestored={(id) => navigate(`#/audits/${id}`)} />
                 {!audit.archivedAt && <Button onClick={() => { void archive(audit); }}><Archive size={16} aria-hidden />Архивировать</Button>}
@@ -55,7 +55,6 @@ export function AuditListPage({ navigate }: { navigate: (hash: string) => void }
             </div>
             <p className="audit-card-date">{new Date(`${audit.inspectedOn}T12:00:00`).toLocaleDateString('ru-RU')} · {audit.author.name}</p>
             <div className="audit-card-indicators"><span className={`audit-pill ${ready === elements.length ? 'audit-pill-ready' : ''}`}>{audit.scope.includedZones.join(', ')}: {ready}/{elements.length} готово</span><span className="audit-photo-count" aria-label={`Фотографий: ${audit.photoIds.length}`}><Camera size={15} aria-hidden />{audit.photoIds.length}</span><span className="audit-work-status">{audit.archivedAt ? 'Архив' : audit.status === 'reviewed' || audit.status === 'ready_for_review' ? 'Готов к выгрузке' : 'В работе'}</span></div>
-            <Button className="audit-open-button" onClick={() => navigate(`#/audits/${audit.id}`)}>Открыть <ArrowRight size={18} aria-hidden /></Button>
           </article>;
         })}</div>
         {!visible.length && <div className="list-empty"><Search size={28} aria-hidden /><h2>{search.trim() ? 'Ничего не найдено' : showArchive ? 'Архив пуст' : 'Первое обследование'}</h2><p>{search.trim() ? 'Попробуйте другое название или адрес.' : showArchive ? 'Архивные записи остаются на этом устройстве.' : 'Создайте объект или импортируйте резервную копию.'}</p></div>}
