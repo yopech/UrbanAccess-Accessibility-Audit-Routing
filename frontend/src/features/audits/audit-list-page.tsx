@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Archive, Camera, Search, MoreHorizontal } from 'lucide-react';
+import { Plus, Archive, Search, MoreHorizontal } from 'lucide-react';
 import { BackupDialog } from '../backup/backup-dialog.js';
 import { Button } from '../../components/ui/button.js';
 import { createZ2Audit, type Audit } from '../../domain/audit-model.js';
@@ -8,7 +8,15 @@ import { audits } from './audit-service.js';
 import { ObjectDetailsForm, type ObjectDetailsValues } from './object-details-form.js';
 export function AuditListPage({ navigate }: { navigate: (hash: string) => void }) {
   const [items, setItems] = useState<readonly Audit[]>([]); const [creating, setCreating] = useState(false);
-  const createdId = useRef(''); const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Audit>();
+  const [openMenuId, setOpenMenuId] = useState<string>();
+  useEffect(() => {
+    const outside = (event: PointerEvent) => { if (!(event.target instanceof Element) || !event.target.closest('.audit-card-menu')) setOpenMenuId(undefined); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpenMenuId(undefined); };
+    document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape); };
+  }, []);
+  const createdId = useRef(''); const [search, setSearch] = useState(''); const [toolsOpen, setToolsOpen] = useState(false);
   const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [showArchive, setShowArchive] = useState(false);
   useEffect(() => {
     let active = true;
@@ -32,33 +40,40 @@ export function AuditListPage({ navigate }: { navigate: (hash: string) => void }
   const visible = items.filter((audit) => Boolean(audit.archivedAt) === showArchive && `${audit.object.name} ${audit.object.address}`.toLocaleLowerCase('ru-RU').includes(search.trim().toLocaleLowerCase('ru-RU')));
   return <main className="audit-main audit-list-screen">
     <header className="workspace-topbar"><div className="workspace-topbar-inner">
-      <div className="workspace-title"><span className="workspace-kicker">UrbanAccess</span><h1>Обследования</h1></div>
-      {!creating && <Button variant="primary" className="new-audit-button" onClick={() => setCreating(true)}><Plus aria-hidden size={18} /><span>Новое обследование</span></Button>}
+      <div className="workspace-title"><h1>Обследования</h1></div>
+      <Button className="list-more-button" aria-label="Настройки списка" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}><MoreHorizontal size={22} aria-hidden /></Button>
     </div></header>
     <div className="workspace-content">
       <div className="list-tools"><label className="audit-search"><Search size={18} aria-hidden /><input aria-label="Поиск обследований" type="search" placeholder="Название или адрес" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-        <BackupDialog triggerLabel="Импорт из бэкапа" onRestored={(id) => navigate(`#/audits/${id}`)} />
+
       </div>
       {creating && <ObjectDetailsForm onSubmit={create} onSubmitted={() => navigate(`#/audits/${createdId.current}`)} onCancel={() => setCreating(false)} />}
+      {editing && <ObjectDetailsForm initial={editing} onCancel={() => setEditing(undefined)} onSubmit={async values => {
+        const result = await audits.commit({ auditId:editing.id,expectedRevision:editing.revision,actor:editing.author,transactionId:crypto.randomUUID(),commands:[{type:'updateObjectDetails',object:values.object,inspectedOn:values.inspectedOn,author:{...editing.author,name:values.authorName}},{type:'setScope',includedZones:[...editing.scope.includedZones],purpose:values.purpose}] });
+        if (result.kind !== 'committed') throw new Error('Реквизиты пока не сохранены. Обновите форму: обследование могло измениться.');
+      }} onSubmitted={() => setEditing(undefined)} />}
       {error && <p role="alert" className="field-error">{error}</p>}
-      <div className="list-section-heading"><h2>{showArchive ? 'Архив' : 'На устройстве'} <span>{visible.length}</span></h2><label className="check-field archive-filter"><input type="checkbox" checked={showArchive} onChange={(event) => setShowArchive(event.target.checked)} /><span>Показать архив</span></label></div>
+      {toolsOpen && <div className="list-more-panel"><BackupDialog triggerLabel="Импорт из бэкапа" onRestored={(id) => navigate(`#/audits/${id}`)} /><label className="check-field archive-filter"><input type="checkbox" checked={showArchive} onChange={(event) => setShowArchive(event.target.checked)} /><span>Показать архив</span></label></div>}
       {loading ? <p role="status">Загружаем обследования</p> : <>
         <div className="audit-list">{visible.map((audit) => {
           const elements = Object.values(audit.elements); const ready = elements.filter((element) => element.readiness === 'ready' && element.confirmation?.valueRevision === element.revision).length;
           return <article className="audit-list-card" key={audit.id} onClick={() => navigate(`#/audits/${audit.id}`)}>
-            <div className="audit-card-heading"><div><h2><a className="audit-card-link" href={`#/audits/${audit.id}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); navigate(`#/audits/${audit.id}`); }}>{audit.object.name}</a></h2><p className="audit-card-address">{audit.object.address}</p></div>
-              <details className="audit-card-menu" onClick={(event) => event.stopPropagation()}><summary aria-label={`Действия: ${audit.object.name}`}><MoreHorizontal size={22} aria-hidden /></summary><div className="audit-card-menu-panel">
-                <BackupDialog auditId={audit.id} triggerLabel="Экспорт бэкапа (.ngo)" onRestored={(id) => navigate(`#/audits/${id}`)} />
+            <div className="audit-card-heading"><div><h2><a className="audit-card-link" title={audit.object.name} href={`#/audits/${audit.id}`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); navigate(`#/audits/${audit.id}`); }}>{audit.object.name}</a></h2></div>
+              <details className="audit-card-menu" open={openMenuId === audit.id} onClick={(event) => { event.stopPropagation(); if (!(event.target instanceof Element) || !event.target.closest('summary')) setOpenMenuId(undefined); }}><summary onClick={event => { event.preventDefault(); setOpenMenuId(current => current === audit.id ? undefined : audit.id); }} aria-label={`Действия: ${audit.object.name}`}><MoreHorizontal size={22} aria-hidden /></summary><div className="audit-card-menu-panel">
+                <Button disabled={!!audit.archivedAt} onClick={async () => { try { const fresh = await audits.load(audit.id); if (fresh) setEditing(fresh); else setError('Обследование не найдено.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось открыть реквизиты.'); } }}>Данные объекта</Button>
+                <BackupDialog auditId={audit.id} triggerLabel="Резервная копия" onRestored={(id) => navigate(`#/audits/${id}`)} />
                 <BackupDialog auditId={audit.id} triggerLabel="Дублировать" intent="duplicate" onRestored={(id) => navigate(`#/audits/${id}`)} />
                 {!audit.archivedAt && <Button onClick={() => { void archive(audit); }}><Archive size={16} aria-hidden />Архивировать</Button>}
               </div></details>
             </div>
-            <p className="audit-card-date">{new Date(`${audit.inspectedOn}T12:00:00`).toLocaleDateString('ru-RU')} · {audit.author.name}</p>
-            <div className="audit-card-indicators"><span className={`audit-pill ${ready === elements.length ? 'audit-pill-ready' : ''}`}>{audit.scope.includedZones.join(', ')}: {ready}/{elements.length} готово</span><span className="audit-photo-count" aria-label={`Фотографий: ${audit.photoIds.length}`}><Camera size={15} aria-hidden />{audit.photoIds.length}</span><span className="audit-work-status">{audit.archivedAt ? 'Архив' : audit.status === 'reviewed' || audit.status === 'ready_for_review' ? 'Готов к выгрузке' : 'В работе'}</span></div>
+            <div className="audit-progress-labels"><span className={`audit-pill ${ready === elements.length ? 'audit-pill-ready' : ready > 0 ? 'audit-pill-progress' : ''}`}>{audit.archivedAt ? 'Архив' : ready === elements.length ? 'Завершено' : ready > 0 || elements.some(element => element.readiness !== 'not_started') ? 'В работе' : 'Черновик'}</span><span>{ready}/{elements.length} готово</span></div>
+            <div className="audit-list-progress" role="progressbar" aria-label={`Готовность: ${audit.object.name}`} aria-valuenow={ready} aria-valuemin={0} aria-valuemax={elements.length}><span style={{width:`${elements.length ? ready / elements.length * 100 : 0}%`}} /></div>
+            <div className="audit-card-footer"><time>{new Date(`${audit.inspectedOn}T12:00:00`).toLocaleDateString('ru-RU')}</time><span>{audit.author.name}</span></div>
           </article>;
         })}</div>
         {!visible.length && <div className="list-empty"><Search size={28} aria-hidden /><h2>{search.trim() ? 'Ничего не найдено' : showArchive ? 'Архив пуст' : 'Первое обследование'}</h2><p>{search.trim() ? 'Попробуйте другое название или адрес.' : showArchive ? 'Архивные записи остаются на этом устройстве.' : 'Создайте объект или импортируйте резервную копию.'}</p></div>}
       </>}
     </div>
+    {!creating && <div className="audit-list-dock"><Button variant="primary" className="new-audit-button" onClick={() => setCreating(true)}><Plus size={18} aria-hidden />Новое обследование</Button>{items.find(item => !item.archivedAt) && <Button onClick={() => navigate(`#/audits/${items.find(item => !item.archivedAt)!.id}`)}>Продолжить</Button>}</div>}
   </main>;
 }

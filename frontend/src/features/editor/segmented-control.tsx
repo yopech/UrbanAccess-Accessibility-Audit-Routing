@@ -5,7 +5,7 @@ export function SegmentedControl<T extends string>({ label, field, value, option
   const group = useRef<HTMLDivElement>(null);
   return <div className="segment-field"><span className="segment-label">{label}</span><div ref={group} role="radiogroup" aria-label={label} className={`segmented-control segments-${options.length}${options.length === 5 ? ' segmented-matrix' : ''}`}>
     {options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} aria-label={option.accessibleLabel ?? option.label} disabled={option.disabled ?? false}
-      data-variant={option.variant ?? 'neutral'} data-audit-field={value === option.value ? field : undefined} tabIndex={value === option.value ? 0 : -1} onClick={() => onChange(option.value)}
+      data-variant={option.variant ?? 'neutral'} data-audit-field={value === option.value || (!options.some(item => item.value === value) && options.find(item => !item.disabled)?.value === option.value) ? field : undefined} tabIndex={value === option.value || (!options.some(item => item.value === value) && options.find(item => !item.disabled)?.value === option.value) ? 0 : -1} onClick={() => onChange(option.value)}
       onKeyDown={(event) => { if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return; event.preventDefault();
         const enabled = options.filter((item) => !item.disabled); const index = enabled.findIndex((item) => item.value === option.value);
         const next = event.key === 'Home' ? enabled[0] : event.key === 'End' ? enabled.at(-1) : enabled[(index + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : enabled.length - 1)) % enabled.length];

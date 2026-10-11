@@ -1,11 +1,9 @@
 import { evaluateMeasurementNorm } from '../../domain/norms/norm-engine.js';
 import { useEffect, useState } from 'react';
-import { Plus, Check, Camera } from 'lucide-react';
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '../../components/ui/accordion.js';
+import { Plus, Check, Camera, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/button.js';
-import { elementQuestions, primaryMeasurement, type Audit, type AuditCommand, type Element, type ElementPatch } from '../../domain/audit-model.js';
+import { elementQuestions, primaryMeasurement, type Audit, type AuditCommand, type Element, type ElementPatch, type Operability } from '../../domain/audit-model.js';
 import { templateForZone, CHECK_LABELS, definitionFor, measurementParametersFor } from '../../domain/templates/index.js';
-import { PhotoPicker } from './photo-picker.js';
 import type { VoiceController } from '../voice/voice-controller.js';
 import { DictationButton } from '../voice/dictation-panel.js';
 import { PhotoGallery } from './photo-gallery.js';
@@ -14,8 +12,10 @@ import { elementVisualStatus } from './element-visual-status.js';
 import { SegmentedControl } from './segmented-control.js';
 import { MeasurementField } from './measurement-field.js';
 import type { EditorController } from './editor-controller.js';
-const readinessLabels = { not_started: 'Не начат', in_progress: 'В работе', needs_clarification: 'Нужно уточнение', ready: 'Готово' };
 type Controller = EditorController<Audit, AuditCommand>;
+function AttributeToggle({ label, field, value, positive, negative, onChange }: { label: string; field: string; value: string; positive: string; negative: string; onChange(value: boolean): void }) {
+  return <div className="attribute-toggle-row"><span><strong>{label}</strong><small>{value === 'unknown' ? 'Не проверено' : value === 'applicable' || value === 'present' ? positive : negative}</small></span><button type="button" role="switch" aria-label={label} aria-checked={value === 'applicable' || value === 'present'} data-audit-field={field} data-unchecked={value === 'unknown'} className="apple-attribute-toggle" onClick={() => onChange(value !== 'applicable' && value !== 'present')}><span /></button></div>;
+}
 function ElementCard({ audit, element, controller, voice, focusField }: { focusField?: string | undefined; audit: Audit; element: Element; controller: Controller; voice: VoiceController }) {
   const [error, setError] = useState(''); const [showQuestions, setShowQuestions] = useState(false);
   const finding = Object.values(audit.findings).find((item) => item.elementId === element.id);
@@ -60,13 +60,11 @@ function ElementCard({ audit, element, controller, voice, focusField }: { focusF
       <details className="element-details" open={focusField === 'name'}><summary>Название и расположение</summary><label>Название элемента<input data-audit-field="name" value={element.name} onChange={(event) => update({ name: event.target.value })} /></label>
       <label>Расположение<input value={element.location} placeholder="Например, главный вход справа" onChange={(event) => update({ location: event.target.value })} /></label>
       </details><div className="status-fields">
-        <SegmentedControl label="Применимость" field="applicability" value={element.applicability} onChange={(applicability) => update({ applicability })} options={[
-          { value: 'unknown', label: 'Не определена', variant: 'warning' }, { value: 'applicable', label: 'Применим', variant: 'neutral', accessibleLabel: 'Применим к этому входу' }, { value: 'not_applicable', label: 'Не применим', variant: 'neutral' }]} />
-        <SegmentedControl label="Наличие" field="presence" value={element.presence} onChange={(presence) => update({ presence, ...(presence === 'absent' && element.operability === 'working' ? { operability: 'unknown' as const } : {}) })} options={[
-          { value: 'unknown', label: 'Не проверено', variant: 'warning' }, { value: 'present', label: 'Есть', variant: 'success' }, { value: 'absent', label: 'Отсутствует', variant: 'danger' }]} />
-        <SegmentedControl label="Работоспособность" field="operability" value={element.operability} onChange={(operability) => update({ operability })} options={[
-          { value: 'unknown', label: 'Не проверена', variant: 'warning' }, { value: 'working', label: 'Исправен', variant: 'success', disabled: element.presence === 'absent' }, { value: 'defective', label: 'Дефект', variant: 'danger' },
-          { value: 'not_working', label: 'Не работает', variant: 'danger' }, { value: 'not_applicable', label: 'Не применима', variant: 'neutral' }]} />
+        <AttributeToggle label="Применимость" field="applicability" value={element.applicability} positive="Применим" negative="Не применим" onChange={(checked) => update({ applicability: checked ? 'applicable' : 'not_applicable' })} />
+        <AttributeToggle label="Наличие" field="presence" value={element.presence} positive="Есть" negative="Отсутствует" onChange={(checked) => { const presence = checked ? 'present' : 'absent'; update({ presence, ...(presence === 'absent' && element.operability === 'working' ? { operability: 'unknown' as const } : {}) }); }} />
+        <label className="operability-row"><span>Работоспособность</span><span className="operability-choice"><select aria-label="Работоспособность" data-audit-field="operability" value={element.operability} onChange={(event) => update({ operability: event.target.value as Operability })}>
+          <option value="unknown">Не проверена</option><option value="working" disabled={element.presence === 'absent'}>Исправен</option><option value="defective">Дефект</option><option value="not_working">Не работает</option><option value="not_applicable">Не применима</option>
+        </select><ChevronRight size={18} aria-hidden /></span></label>
       </div>
       {element.presence === 'absent' && <p className="notice">Зафиксируйте отсутствие в замечании.</p>}
       {element.applicability === 'not_applicable' && <label>Причина неприменимости<textarea data-audit-field="exclusionReason" value={element.exclusionReason ?? ''} onChange={(event) => update({ exclusionReason: event.target.value })} /></label>}
@@ -76,19 +74,19 @@ function ElementCard({ audit, element, controller, voice, focusField }: { focusF
       {element.presence !== 'absent' && element.applicability !== 'not_applicable' && (definitionFor(element.type).checks ?? []).map(parameter => <SegmentedControl key={parameter} label={CHECK_LABELS[parameter]} field={parameter} value={element.checks?.[parameter] ?? 'unknown'} options={[
         { value: 'unknown', label: 'Не проверено', variant: 'warning' }, { value: 'present', label: 'Есть', variant: 'success' }, { value: 'absent', label: 'Отсутствует', variant: 'danger' },
       ]} onChange={value => controller.enqueue({ type: 'setElementCheck', elementId: element.id, parameter, value })} />)}
-      <label>Дополнительный комментарий<textarea aria-label="Дополнительный комментарий" value={element.comment} placeholder="Описание и детали обследования" onChange={(event) => update({ comment: event.target.value })} /></label>
-      <details className="element-details" open={element.presence === 'absent' || focusField === 'finding' || Boolean(finding?.text || recommendation?.text)}><summary>Замечание и рекомендация</summary><label>Замечание{element.presence === 'absent' ? ' об отсутствии' : ''}<textarea data-audit-field="finding" value={finding?.text ?? ''} placeholder="Что обнаружили при обследовании" onChange={(event) => note(event.target.value)} /></label>
+      <section className="element-notes" aria-label="Записи инспектора"><h3>Записи инспектора</h3><details className="note-row"><summary><span>Дополнительный комментарий<small>{element.comment || 'Описание и детали обследования'}</small></span><ChevronRight size={18} aria-hidden /></summary><label>Дополнительный комментарий<textarea aria-label="Дополнительный комментарий" value={element.comment} placeholder="Описание и детали обследования" onChange={(event) => update({ comment: event.target.value })} /></label></details>
+      <details className="note-row" open={element.presence === 'absent' || focusField === 'finding'}><summary><span>Замечания и дефекты<small>{finding?.text || 'Наблюдения и выявленные дефекты'}</small></span><ChevronRight size={18} aria-hidden /></summary><label>Замечание{element.presence === 'absent' ? ' об отсутствии' : ''}<textarea data-audit-field="finding" value={finding?.text ?? ''} placeholder="Что обнаружили при обследовании" onChange={(event) => note(event.target.value)} /></label>
+      </details><details className="note-row" open={focusField === 'recommendation'}><summary><span>Рекомендация по СП 59<small>{recommendation?.text || 'Предлагаемые мероприятия'}</small></span><ChevronRight size={18} aria-hidden /></summary>
       {normRecommendations(audit).length > 0 && <Button className="norm-recommendation-pill" onClick={insertNormRecommendations}><Plus size={16} aria-hidden />Вставить рекомендацию по СП 59</Button>}
-      <label>Рекомендация<textarea aria-label="Рекомендация" value={recommendation?.text ?? ''} placeholder="Что предлагаете сделать" onChange={(event) => {
+      <label>Рекомендация<textarea data-audit-field="recommendation" aria-label="Рекомендация" value={recommendation?.text ?? ''} placeholder="Что предлагаете сделать" onChange={(event) => {
         const fresh = controller.getSnapshot().value;
         const existing = Object.values(fresh.recommendations).find((item) => item.elementId === element.id);
         controller.enqueue({ type: 'updateRecommendation', recommendation: { id: existing?.id ?? crypto.randomUUID(), elementId: element.id,
           findingIds: Object.values(fresh.findings).filter((item) => item.elementId === element.id).map((item) => item.id), text: event.target.value } });
       }} /></label>
-      </details>
+      </details></section>
     </fieldset>
       <div className="element-action-bar" role="group" aria-label="Фото и диктовка">
-        <PhotoPicker audit={audit} element={element} controller={controller} />
         <fieldset disabled={Boolean(audit.archivedAt) || controller.getSnapshot().locked}><DictationButton audit={audit} element={element} mode="comment" controller={voice} baseRevision={controller.getSnapshot().base.revision} /></fieldset>
         <fieldset className="recommendation-action" disabled={Boolean(audit.archivedAt) || controller.getSnapshot().locked}><DictationButton audit={audit} element={element} mode="recommendation" controller={voice} baseRevision={controller.getSnapshot().base.revision} /></fieldset>
       </div>
@@ -101,33 +99,19 @@ function ElementCard({ audit, element, controller, voice, focusField }: { focusF
     </fieldset>
   </div>;
 }
-export function ElementAccordion({ audit, controller, voice, focusElementId, focusField, zoneId }: { audit: Audit; controller: Controller; voice: VoiceController; zoneId?: string; focusElementId?: string | undefined; focusField?: string | undefined }) {
+export function ElementAccordion({ audit, controller, voice, focusElementId, focusField, zoneId, onOpenElement }: { audit: Audit; controller: Controller; voice: VoiceController; zoneId?: string; focusElementId?: string | undefined; focusField?: string | undefined; onOpenElement(id: string): void }) {
   const zone = (zoneId ? audit.zones[zoneId] : Object.values(audit.zones).find(zone => zone.code === 'Z2'))!;
-  const [open, setOpen] = useState<string[]>([focusElementId && zone.elementIds.includes(focusElementId) ? focusElementId : zone.elementIds[0]!]);
-  useEffect(() => { if (!focusElementId) { if (focusField === 'template') document.querySelector<HTMLElement>('[data-audit-field=template]')?.focus(); return; } const target = document.querySelector<HTMLElement>(`[data-audit-element="${CSS.escape(focusElementId)}"] [data-audit-field="${CSS.escape(focusField ?? 'readiness')}"]`); target?.focus(); target?.scrollIntoView({ block: 'center' }); }, [focusElementId, focusField]);
   const [error, setError] = useState('');
-  const change = async (next: string[]) => { void voice.stop(); const result = await controller.flush(); if (result.kind === 'saved') { setOpen(next); setError(''); } else setError('Сначала завершите сохранение или разрешите конфликт.'); };
-  return <><Accordion type="multiple" value={open} onValueChange={(next) => { void change(next); }}>
-    {zone.elementIds.map((id) => { const element = audit.elements[id]!; return <AccordionItem key={id} value={id} className="element-card border-l-4" data-visual-status={elementVisualStatus(audit, element)}>
-      <AccordionTrigger className="element-trigger bg-white rounded-2xl border border-zinc-200/80 px-4 py-3.5">
-        <ElementIcon elementType={element.type} />
-        <span className="element-title"><strong className="text-[15px] font-semibold">{element.name || definitionFor(element.type).name}</strong>{element.location && <span className="element-location text-[13px] text-zinc-500">{element.location}</span>}
-          {element.readiness === 'ready' && element.confirmation?.valueRevision === element.revision && <span className="measurement-summary">{definitionFor(element.type).parameters.map((parameter) => primaryMeasurement(audit, element.id, parameter)).filter((measurement) => !!measurement).map((measurement) => `${Number(measurement.normalized.value.toFixed(2)).toLocaleString('ru-RU')} ${measurement.normalized.unit === 'cm' ? 'см' : '%'}`).join(' · ')}</span>}
-        </span>
-        <span className="element-summary">
-          {element.readiness === 'needs_clarification' ? <span className="readiness-badge readiness-needs_clarification">{readinessLabels[element.readiness]}</span> : <span className="sr-only">{readinessLabels[element.readiness]}</span>}
-          {element.photoIds.length > 0 && <span className="photo-count" aria-label={`Фотографий: ${element.photoIds.length}`}><Camera size={16} aria-hidden />{element.photoIds.length}</span>}
-        </span>
-      </AccordionTrigger>
-      <AccordionContent className="element-accordion-content"><ElementCard audit={audit} element={element} controller={controller} voice={voice} focusField={focusElementId === element.id ? focusField : undefined} /></AccordionContent>
-    </AccordionItem>; })}
-  </Accordion>
-  {!audit.archivedAt && <div className="add-element-chips" role="group" aria-label="Добавить элемент">
-    {templateForZone(zone.code).elements.map((definition, index) => { const type = definition.type; const count = zone.elementIds.filter(id => audit.elements[id]?.type === type).length; const name = `${definition.name} ${count + 1}`;
-      return <Button key={type} data-audit-field={index === 0 ? 'template' : undefined} variant="secondary" disabled={controller.getSnapshot().locked} onClick={() => { const id = crypto.randomUUID();
-        controller.enqueue({ type: 'addElement', id, zoneId: zone.id, elementType: type, name: `${definitionFor(type).name} ${count + 1}` }); void change([...open, id]);
-      }}><Plus size={18} aria-hidden />{name}</Button>;
-    })}
-  </div>}
-  {error && <p role="alert" className="field-error">{error}</p>}</>;
+  useEffect(() => { if (!focusElementId) { if (focusField === 'template') document.querySelector<HTMLElement>('[data-audit-field=template]')?.focus(); return; } const target = document.querySelector<HTMLElement>(`[data-audit-element="${CSS.escape(focusElementId)}"] [data-audit-field="${CSS.escape(focusField ?? 'name')}"]`); if (focusField) { target?.focus(); target?.scrollIntoView({ block: 'center' }); } }, [focusElementId, focusField]);
+  const selected = audit.elements[focusElementId ?? ''];
+  if (selected && zone.elementIds.includes(selected.id)) return <section className="element-detail-page"><header className="element-detail-heading"><ElementIcon elementType={selected.type} /><h2>{selected.name || definitionFor(selected.type).name}</h2>{selected.readiness === 'needs_clarification' && <span className="readiness-badge readiness-needs_clarification">Нужно уточнение</span>}</header><ElementCard audit={audit} element={selected} controller={controller} voice={voice} focusField={focusField} /></section>;
+  return <><div className="element-navigation-list">{zone.elementIds.map(id => { const element = audit.elements[id]!; return <article key={id} className="element-card border-l-4" data-visual-status={elementVisualStatus(audit, element)}>
+    <button type="button" className="element-trigger element-navigation-row" aria-label={`Открыть элемент: ${element.name}`} onClick={() => onOpenElement(id)}>
+      <ElementIcon elementType={element.type} /><span className="element-title"><strong>{element.name || definitionFor(element.type).name}</strong>{element.location && <span className="element-location">{element.location}</span>}</span>
+      <span className="element-summary">{element.readiness === 'needs_clarification' && <span className="readiness-badge readiness-needs_clarification">Нужно уточнение</span>}{element.photoIds.length > 0 && <span className="photo-count" aria-label={`Фотографий: ${element.photoIds.length}`}><Camera size={16} aria-hidden />{element.photoIds.length}</span>}</span><ChevronRight size={20} aria-hidden />
+    </button></article>; })}</div>
+    {!audit.archivedAt && <div className="add-element-chips" role="group" aria-label="Добавить элемент">{templateForZone(zone.code).elements.map((definition,index) => { const count = zone.elementIds.filter(id => audit.elements[id]?.type === definition.type).length;
+      return <Button key={definition.type} data-audit-field={index === 0 ? 'template' : undefined} disabled={controller.getSnapshot().locked} onClick={async () => { try { await voice.stop(); const id=crypto.randomUUID(); controller.enqueue({ type:'addElement',id,zoneId:zone.id,elementType:definition.type,name:`${definition.name} ${count + 1}` }); if ((await controller.flush()).kind === 'saved') onOpenElement(id); else setError('Сначала завершите сохранение.'); } catch(cause) { setError(cause instanceof Error ? cause.message : 'Не удалось добавить элемент.'); } }}><Plus size={18} aria-hidden />{definition.name} {count + 1}</Button>;
+    })}</div>}{error && <p role="alert" className="field-error">{error}</p>}
+  </>;
 }

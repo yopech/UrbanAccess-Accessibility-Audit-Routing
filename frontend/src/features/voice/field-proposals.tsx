@@ -46,10 +46,11 @@ export function FieldProposals({ transcript, auditId, zoneId, elementId, editor,
   const visible = proposals.filter(proposal => !hidden.includes(proposal.id));
   if (!visible.length && !error && !status) return null;
   return <section className="field-proposals" aria-label="Предложения замеров из речи">
-    {visible.length > 0 && <><h3>Найдены замеры в речи:</h3><p className="proposal-caption">Проверьте число и единицу. Замер сохраняется только после вашего подтверждения.</p></>}
+    {visible.length > 0 && <><h3>Найдены замеры</h3><p className="proposal-caption">Проверьте число и единицу. Замер сохраняется только после вашего подтверждения.</p></>}
     {visible.map(proposal => <div className="field-proposal" key={proposal.id}>
-      <div className="proposal-actions"><Button className="proposal-accept" disabled={disabled || busy || snapshot.locked || !!snapshot.value.archivedAt} aria-label={`Принять замер: ${PARAMETER_LABELS[proposal.parameter]}, ${proposal.value} ${proposal.unit}`} onClick={() => { void accept(proposal); }}><span>{PARAMETER_LABELS[proposal.parameter]}: {proposal.value.toLocaleString('ru-RU')} {({mm:'мм',cm:'см',m:'м','%':'%',deg:'°'})[proposal.unit]}</span><Check size={18} aria-hidden /></Button>
-        <Button className="proposal-dismiss" aria-label={`Отклонить замер: ${PARAMETER_LABELS[proposal.parameter]}, ${proposal.value}`} disabled={busy || disabled} onClick={() => hide(proposal.id)}><X size={18} aria-hidden /></Button></div>
+      <div className="proposal-value"><strong>{proposal.value.toLocaleString('ru-RU')} <span>{({mm:'мм',cm:'см',m:'м','%':'%',deg:'°'})[proposal.unit]}</span></strong><span>{PARAMETER_LABELS[proposal.parameter]}</span></div>
+      <div className="proposal-actions"><Button className="proposal-accept" disabled={disabled || busy || snapshot.locked || !!snapshot.value.archivedAt} aria-label={`Принять замер: ${PARAMETER_LABELS[proposal.parameter]}, ${proposal.value} ${proposal.unit}`} onClick={() => { void accept(proposal); }}><Check size={18} aria-hidden /><span>Принять</span></Button>
+        <Button className="proposal-dismiss" aria-label={`Отклонить замер: ${PARAMETER_LABELS[proposal.parameter]}, ${proposal.value}`} disabled={busy || disabled} onClick={() => hide(proposal.id)}><X size={18} aria-hidden /><span>Отклонить</span></Button></div>
       <p className="proposal-source">«{proposal.sourcePhrase}»{proposal.confidence === 'inferred' ? ' · Единица выбрана по параметру, проверьте её.' : ''}</p>
     </div>)}
     {status && <p role="status" aria-live="polite" className="proposal-caption">{status}</p>}{error && <p role="alert" className="field-error">{error}</p>}

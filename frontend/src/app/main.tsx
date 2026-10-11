@@ -44,6 +44,7 @@ function App() {
     void pwaUpdates.start();
     return () => { active = false; window.removeEventListener('hashchange', change); pwaUpdates.stop(); };
   }, [navigate]);
+  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [route]);
   const match = /^#\/audits\/([0-9a-f-]+)(\/review)?(?:\?(.*))?$/i.exec(route);
   const focus = new URLSearchParams(match?.[3] ?? '');
   return <><header className="shell-header"><strong>UrbanAccess</strong><span>Данные хранятся на этом устройстве</span>
@@ -52,7 +53,7 @@ function App() {
     {error && <p role="alert" className="global-error">{error}</p>}
     {!ready && !error && <p role="status" className="audit-page">Открываем локальные данные</p>}
     <div inert={pwa.status === 'preparing'}>{ready && (route === '#/audits' ? <AuditListPage navigate={navigate} />
-      : match ? (match[2] ? <AuditReviewPage key={route} id={match[1]!} navigate={navigate} register={register} /> : <AuditEditorPage key={route} id={match[1]!} navigate={navigate} register={register} focusElementId={focus.get('element') ?? undefined} focusField={focus.get('field') ?? undefined} voiceDraftId={focus.get('voice') ?? undefined} />)
+      : match ? (match[2] ? <AuditReviewPage key={route} id={match[1]!} navigate={navigate} register={register} /> : <AuditEditorPage key={route} id={match[1]!} navigate={navigate} register={register} focusElementId={focus.get('element') ?? undefined} focusField={focus.get('field') ?? undefined} voiceDraftId={focus.get('voice') ?? undefined} zoneCode={focus.get('zone') ?? undefined} />)
       : <main className="audit-page"><h1>Раздел не найден</h1><button onClick={() => navigate('#/audits')}>Открыть обследования</button></main>)}</div>
     <small className="build-label" data-build={__APP_VERSION__}>Версия {__APP_VERSION__}</small>
   </>;

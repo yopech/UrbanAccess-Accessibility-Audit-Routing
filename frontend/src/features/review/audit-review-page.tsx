@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight, Download, FileText, Camera, Check, Printer, Mic } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileText, Camera, Check, Printer } from 'lucide-react';
 import { AuditPrintView } from './audit-print-view.js';
-import type { Audit, AuditCommand } from '../../domain/audit-model.js';
+import { primaryMeasurement, type Audit, type AuditCommand } from '../../domain/audit-model.js';
 import { audits, createEditor } from '../audits/audit-service.js';
 import type { EditorController } from '../editor/editor-controller.js';
 import { useEditorController } from '../editor/use-editor-controller.js';
@@ -16,6 +16,10 @@ import type { DocumentSnapshot } from '../../documents/act-draft.js';
 import { pwaUpdates } from '../../pwa/pwa-update-controller.js';
 import { updateParticipants } from '../../pwa/update-participants.js';
 import { registerNavigationGuard } from '../../app/navigation-guards.js';
+import { ElementIcon } from '../editor/element-icon.js';
+import { PARAMETER_LABELS } from '../../domain/measurements.js';
+import { measurementParametersFor } from '../../domain/templates/index.js';
+import { evaluateMeasurementNorm } from '../../domain/norms/norm-engine.js';
 type Controller = EditorController<Audit, AuditCommand>;
 
 function Review({ controller, navigate, register }: { controller: Controller; navigate(route: string): void; register(controller: Controller | undefined): void }) {
@@ -27,6 +31,18 @@ function Review({ controller, navigate, register }: { controller: Controller; na
   const readiness = auditReadiness(audit, drafts);
   const [documentBytes, setDocumentBytes] = useState<{ revision: number; bytes: number }>();
   const total = Object.keys(audit.elements).length; const ready = Math.max(0, total - readiness.notReady);
+  const tasks = [...new Map(readiness.questions.map(question => [`${question.elementId}:${question.field}:${question.message}`, { ...question, critical: false, completed: false, voice: undefined as string | undefined }])).values(),
+    ...readiness.pendingDrafts.map(draft => ({ elementId: draft.elementId, field: 'comment', message: 'Проверить голосовой черновик', critical: false, completed: false, voice: draft.id }))];
+  const normTasks = Object.values(audit.elements).filter(element => element.applicability !== 'not_applicable' && element.presence !== 'absent').flatMap(element => measurementParametersFor(element.type).flatMap(parameter => {
+    const measurement = primaryMeasurement(audit, element.id, parameter); const input = element.measurementInputs[parameter];
+    if (!measurement || (input && (input.text !== measurement.raw.text || input.unit !== measurement.raw.unit))) return [];
+    const norm = evaluateMeasurementNorm(parameter, measurement.normalized, undefined, element.type);
+    if (!norm || norm.status === 'ok') return [];
+    return [{ elementId: element.id, field: parameter, message: `${PARAMETER_LABELS[parameter]}: ${norm.value.toLocaleString('ru-RU')} ${norm.unit === 'cm' ? 'см' : '%'}. Ориентир: ${norm.message.match(/Ориентир: (.*?)\. СП/)?.[1] ?? norm.limit}. Уточнить по СП 59.`, critical: norm.status === 'fail', completed: element.readiness === 'ready' && element.confirmation?.valueRevision === element.revision, voice: undefined as string | undefined }];
+  }));
+  const allTasks = [...tasks, ...normTasks];
+  const remaining = allTasks.filter(task => !task.completed).length;
+  const groups = [...new Set(allTasks.map(task => task.elementId))];
   const reviewed = !!audit.reviewed && snapshot.saveState.kind === 'saved';
   useEffect(() => { register(controller); return () => register(undefined); }, [controller, register]);
   useEffect(() => { let active = true; setLoaded(false); void Promise.all([voiceDrafts.list(audit.id), listDocuments(audit.id)]).then(([voice, docs]) => { if (active) { setDrafts(voice); setDocuments(docs); setLoaded(true); } }, (cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'Не удалось получить материалы.'); }); return () => { active = false; }; }, [audit.id, audit.revision]);
@@ -54,19 +70,24 @@ function Review({ controller, navigate, register }: { controller: Controller; na
   return <main className="audit-page audit-review">
     <header className="workspace-topbar review-topbar"><div className="workspace-topbar-inner">
       <Button className="review-back" aria-label="Вернуться к карточкам" disabled={busy} onClick={() => navigate(`#/audits/${audit.id}`)}><ChevronLeft size={20} aria-hidden /><span>Назад в редактор</span></Button>
-      <div className="workspace-title"><span className="workspace-kicker">Сводка · {audit.scope.includedZones.join(', ')}</span><h1>{audit.object.name}</h1></div>
+      <div className="workspace-title"><span className="workspace-kicker">Список доработок · {audit.scope.includedZones.join(', ')}</span><h1>{audit.object.name}</h1></div>
       <Button aria-label="Экспорт документа" className="quiet-button" onClick={() => document.getElementById('act-export')?.scrollIntoView({ behavior: 'smooth' })}><Download size={18} aria-hidden /><span>Экспорт</span></Button>
     </div></header>
     <div className="workspace-content review-content">
       <div className="review-object-line"><p>{audit.object.address}</p><SaveStatusBadge compact state={snapshot.saveState} onRetry={() => { void controller.retry(); }} /></div>
-      <section className="review-card readiness-card"><div className="review-section-heading"><h2>{audit.scope.includedZones.length === 1 ? 'Готовность входной группы' : 'Готовность обследования'}</h2><span className={`audit-pill ${readiness.ready && loaded ? 'audit-pill-ready' : ''}`}>{ready} из {total}</span></div>
+      <section className="punch-list" aria-label="Список доработок">
+        <h1>Список доработок</h1><p className="punch-subtitle">Осталось действий для проверки: {remaining}</p>
+        <h2 className="sr-only">{audit.scope.includedZones.length === 1 ? 'Готовность входной группы' : 'Готовность обследования'}</h2>
         <div className="review-progress" role="progressbar" aria-label="Готовность карточек обследования" aria-valuenow={ready} aria-valuemin={0} aria-valuemax={total}><div style={{ width: `${total ? ready / total * 100 : 0}%` }} /></div>
-        <div className="review-counts"><div><strong>{readiness.notReady}</strong><p>Карточек не готово</p></div><div><strong>{readiness.pendingDrafts.length}</strong><p>Черновиков диктовки</p></div><div><strong>{readiness.questions.length}</strong><p>Полей для проверки</p></div></div>
         {!loaded && <p role="status">Загружаем голосовые черновики и документы</p>}
-        {(readiness.questions.length > 0 || readiness.pendingDrafts.length > 0) && <h3>Что требуется уточнить</h3>}
-        <div className="review-issues">{readiness.questions.map((question, index) => <Button className="review-issue" key={`${question.elementId}-${question.field}-${index}`} disabled={busy} onClick={() => edit(question.elementId, question.field)}><span><strong>{audit.elements[question.elementId]?.name ?? 'Форма'}: </strong><span>{question.message}</span></span><ChevronRight size={18} aria-hidden /></Button>)}
-          {readiness.pendingDrafts.map((draft) => <Button className="review-issue" key={draft.id} disabled={busy} onClick={() => edit(draft.elementId, 'comment', draft.id)}><Mic size={18} aria-hidden /><span><strong>Проверить голосовой черновик: {audit.elements[draft.elementId]?.name}</strong><span>Откройте запись и подтвердите текст.</span></span><ChevronRight size={18} aria-hidden /></Button>)}
-        </div>
+        {groups.map(id => { const element = audit.elements[id]; const rows = allTasks.filter(task => task.elementId === id); return <section className="punch-group" key={id}>
+          <header><ElementIcon elementType={element?.type ?? ''} /><strong>{element?.name ?? 'Обследование'}</strong><span>{rows.filter(row => !row.completed).length} осталось</span></header>
+          {rows.map((task, index) => <button type="button" className="punch-task" key={`${task.field}-${task.voice ?? index}`} disabled={busy} aria-label={`${element?.name ?? 'Форма'}: ${task.message}`} onClick={() => edit(task.elementId, task.field, task.voice)}>
+            <span className={`punch-check ${task.completed ? 'is-complete' : ''}`} aria-hidden>{task.completed && <Check size={14} />}</span>
+            <span className="punch-task-text">{task.message}{task.completed && <small>Зафиксировано инспектором</small>}</span>
+            <span className={`punch-priority ${task.critical ? 'is-critical' : ''}`} aria-label={task.critical ? 'Отклонение от нормативного профиля' : 'Требуется проверка'} /><ChevronRight size={18} aria-hidden />
+          </button>)}
+        </section>; })}
         {loaded && readiness.ready && <p className="review-ready-note"><Check size={18} aria-hidden />Карточки завершены, голосовые черновики разобраны. Материалы готовы для экспертной проверки.</p>}
       </section>
       <section className="review-card expert-card"><div className="review-section-heading"><h2>Экспертная проверка</h2><Button role="switch" aria-checked={reviewed} aria-label="Проверено экспертом" className={`expert-switch ${reviewed ? 'is-checked' : ''}`} disabled={busy || !loaded || !readiness.ready || !expert.trim() || !!audit.archivedAt || snapshot.locked || !!audit.reviewed} onClick={() => { void review(); }}><span className="expert-switch-thumb" /></Button></div>
@@ -85,6 +106,7 @@ function Review({ controller, navigate, register }: { controller: Controller; na
       </section>
       <div className="review-backup"><BackupDialog auditId={audit.id} beforeOperation={async () => (await controller.flush()).kind === 'saved'} onRestored={(id) => navigate(`#/audits/${id}`)} /><p>Переносимая копия записей и фотографий.</p></div>
     </div>
+    <div className="punch-export-dock"><Button variant="primary" disabled={busy || !loaded || snapshot.locked} onClick={() => document.getElementById('act-export')?.scrollIntoView({ behavior: 'smooth' })}><FileText size={22} aria-hidden />Завершить и экспортировать DOCX / A4</Button></div>
     {print && <AuditPrintView bundle={print} close={() => setPrint(undefined)} />}
     <RevisionConflictDialog open={snapshot.saveState.kind === 'conflict'} local={snapshot.value} remote={snapshot.remote} onLoadLatest={() => controller.loadLatest()} />
   </main>;

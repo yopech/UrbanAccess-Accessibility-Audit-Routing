@@ -8,6 +8,9 @@ import type { Audit, AuditCommand, Element } from '../../domain/audit-model.js';
 import type { EditorController } from '../editor/editor-controller.js';
 import { VoiceController, type VoiceState } from './voice-controller.js';
 import type { VoiceDraft } from '../../voice/voice-drafts.js';
+function HighlightedTranscript({ text }: { text: string }) {
+  return <>{text.split(/(\d+(?:[.,]\d+)?|(?<![а-яё])(?:ноль|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|полтора|целых|десятых|сотых)(?![а-яё]))/gi).map((part, index) => index % 2 ? <strong key={index}>{part}</strong> : part)}</>;
+}
 const focusOrigins = new WeakMap<VoiceController, HTMLElement>();
 function rememberFocus(controller: VoiceController): void { if (document.activeElement instanceof HTMLElement) focusOrigins.set(controller, document.activeElement); }
 const labels: Record<VoiceState, string> = { idle: 'Диктовка', requesting: 'Запрос доступа к микрофону', listening: 'Идёт запись', stopping: 'Завершение записи', review: 'Проверка текста', error: 'Проверка текста после остановки', cancelled: 'Запись отменена', discarded: 'Черновик отклонён', applied: 'Текст добавлен' };
@@ -31,13 +34,13 @@ export function DictationPanel({ controller, editor }: { controller: VoiceContro
       <Dialog.Close asChild><button type="button" className="voice-sheet-close" aria-label="Закрыть панель"><span><X size={18} strokeWidth={2.5} aria-hidden /></span></button></Dialog.Close>
       <div className="dictation-scroll">
       <Dialog.Title>Диктовка {draft?.context.mode === 'recommendation' ? 'рекомендации' : 'комментария'}</Dialog.Title>
-      <Dialog.Description>Исходный элемент: {element?.name || 'карточка элемента'}. Проверьте текст, затем добавьте его к записи. Уже введённый вручную текст сохранится.</Dialog.Description>
-      <p role="status" aria-live="polite" aria-atomic="true">{labels[state.state]}{state.warning && state.state === 'listening' ? '. Запись завершится через 10 секунд или раньше.' : ''}</p>
-      <p aria-live="off">Время записи: {state.elapsed} сек. Максимум 60 секунд.</p>
+      <Dialog.Description>{element?.name || 'Карточка элемента'}. Проверьте текст перед добавлением.</Dialog.Description>
+      <div className="dictation-status-row"><p role="status" aria-live="polite" aria-atomic="true">{labels[state.state]}{state.warning && state.state === 'listening' ? '. Запись завершится через 10 секунд или раньше.' : ''}</p>{state.state === 'listening' && <span className="dictation-wave" aria-hidden>{Array.from({length: 9}, (_, index) => <i key={index} style={{animationDelay: `${index * 0.08}s`}} />)}</span>}</div>
+      <p aria-live="off" className="dictation-timer">Время записи: {state.elapsed} сек. Максимум 60 секунд.</p>
       {state.state === 'requesting' && <p>Разрешите микрофон в запросе браузера. Запись начнётся после разрешения.</p>}
-      {recording && <><p aria-live="off" className="notice">{[draft?.reviewText, state.interim].filter(Boolean).join(' ') || 'Промежуточный текст появится здесь. В черновик сохраняются окончательные фрагменты.'}</p></>}
+      {recording && <><p aria-live="off" className="dictation-transcript"><HighlightedTranscript text={[draft?.reviewText, state.interim].filter(Boolean).join(' ') || 'Говорите, текст появится здесь'} /></p></>}
       {state.error && <p role="alert" className="field-error">{state.error}</p>}
-      <label>Текст для проверки<textarea value={draft?.reviewText ?? ''} disabled={state.applying || state.applicationPending || state.state === 'applied'} onChange={(event) => controller.editReview(event.target.value)} placeholder="Полученный текст можно исправить с клавиатуры" /></label>
+      <label className="dictation-review-field">Текст для проверки<textarea value={draft?.reviewText ?? ''} disabled={state.applying || state.applicationPending || state.state === 'applied'} onChange={(event) => controller.editReview(event.target.value)} placeholder="Полученный текст можно исправить с клавиатуры" /></label>
       {draft && draft.context.mode === 'comment' && !recording && state.state !== 'applied' && state.state !== 'discarded' && <FieldProposals key={draft.id} transcript={draft.reviewText} auditId={draft.auditId} zoneId={draft.context.zoneId} elementId={draft.elementId} editor={editor} disabled={state.applying || state.applicationPending || !!state.persistenceError} />}
       <p className="secondary-text">{controller.capability().message}</p>
       <p aria-live="off">{state.persistenceError ? 'Черновик пока не сохранён.' : state.saving ? 'Сохраняем черновик' : 'Черновик сохранён на устройстве'}</p>
@@ -46,6 +49,7 @@ export function DictationPanel({ controller, editor }: { controller: VoiceContro
       </div><div className="dictation-footer">
       {recording ? <Button variant="primary" className="dictation-stop" disabled={state.state === 'stopping'} onClick={() => { void controller.stop(); }}><Square aria-hidden />Остановить запись</Button> : <Button variant="primary" disabled={recording || state.applying || !draft?.reviewText.trim() || !!state.persistenceError || state.state === 'applied'} onClick={() => { void controller.apply(editor); }}>
         {state.applying ? 'Сохраняем добавленный текст' : `Добавить к ${draft?.context.mode === 'recommendation' ? 'рекомендации' : 'комментарию'}`}</Button>}
+      {!recording && <Dialog.Close asChild><Button className="dictation-done" disabled={state.applying || state.applicationPending}>Готово</Button></Dialog.Close>}
       </div>
     </Dialog.Content></Dialog.Portal>
   </Dialog.Root>;
