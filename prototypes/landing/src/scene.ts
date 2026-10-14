@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { entrance, rampHeightAt, routes, type Point3 } from './layout';
+import { createCityContext } from './city-context';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export type ZoneIndex = 0 | 1 | 2 | 3;
 type Pose = { position: THREE.Vector3; target: THREE.Vector3; span: number };
 const BRAND = 0x12372a;
 const poses: Pose[] = [
-  { position: new THREE.Vector3(18, 17, 24), target: new THREE.Vector3(-.7, .3, 2), span: 25.5 },
+  { position: new THREE.Vector3(18, 17, 24), target: new THREE.Vector3(-.7, .8, .3), span: 33 },
   { position: new THREE.Vector3(9, 8, 19), target: new THREE.Vector3(-1.5, 1, 4.2), span: 12.5 },
   { position: new THREE.Vector3(12, 18, 19), target: new THREE.Vector3(-1.1, .7, -.4), span: 13.3 },
   { position: new THREE.Vector3(11, 14, 13), target: new THREE.Vector3(3, .8, -1.7), span: 7.3 },
@@ -47,7 +48,7 @@ export class BuildingScene {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     // Native-density rendering, bounded by total framebuffer pixels in resize().
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // Architecture and lights are fixed; do not redraw the shadow atlas every animation frame.
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -62,7 +63,7 @@ export class BuildingScene {
     const sun = new THREE.DirectionalLight(0xfffaf1, 3.2);
     sun.position.set(-8, 18, 12); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 55 });
+    Object.assign(sun.shadow.camera, { left: -23, right: 23, top: 23, bottom: -23, near: 1, far: 70 });
     sun.shadow.bias = -.0005; sun.shadow.normalBias = .045;
     this.scene.add(sun);
     this.scene.add(new THREE.AmbientLight(0xffffff, .35));
@@ -151,10 +152,11 @@ export class BuildingScene {
   private build() {
     const white = this.material(0xfafbf8), wall = this.material(0xe8e9e4), floor = this.material(0xf2f0e9);
     const green = this.material(BRAND), metal = this.material(0x5e796c, .45), glass = this.material(0x96b7ad, .23);
-    const stone = this.material(0xd9dcd7), road = this.material(0xe1e4e1);
+    const stone = this.material(0xd9dcd7);
     this.box(20, .35, 18, 0, -.15, 1.5, white, this.root, true);
-    this.box(19.6, .045, 3, 0, .05, 8.5, road);
-    for (let x = -9; x < 10; x += 2) this.box(.8, .02, .055, x, .08, 8.8, white);
+    const city = createCityContext(); this.root.add(city.group);
+    city.materials.forEach(material => this.materials.add(material));
+    city.geometries.forEach(geometry => this.geometries.add(geometry));
     this.box(10.4, .45, 8.4, 0, .26, 0, stone, this.root, true);
     this.box(10, .08, 8, 0, .52, 0, floor);
     this.box(10.2, 3.5, .23, 0, 2.3, -4, wall);
@@ -329,7 +331,7 @@ export class BuildingScene {
     this.camera.top=span/2;this.camera.bottom=-span/2;this.camera.near=.1;this.camera.far=100;
     this.camera.lookAt(this.currentTarget);this.camera.updateProjectionMatrix();
     this.renderer.render(this.scene,this.camera);
-    this.onProject?.(this.markers.map((p,i)=>{const v=p.clone().project(this.camera);return{x:(v.x*.5+.5)*this.width,y:(-.5*v.y+.5)*this.height,opacity:i<2?1-this.cutaway:this.cutaway,visible:(i<2?1-this.cutaway:this.cutaway)>.01&&Math.abs(v.x)<.82&&Math.abs(v.y)<.85};}));
+    this.onProject?.(this.markers.map((p,i)=>{const v=p.clone().project(this.camera);return{x:(v.x*.5+.5)*this.width,y:(-.5*v.y+.5)*this.height,opacity:this.weights[i],visible:i===this.selected&&this.weights[i]>.01&&Math.abs(v.x)<.82&&Math.abs(v.y)<.85};}));
     if(this.transition)this.request();
   };
   private visibility=()=>{if(document.hidden){cancelAnimationFrame(this.frame);this.frame=0;}else this.request();};

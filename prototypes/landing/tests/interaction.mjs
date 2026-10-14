@@ -31,6 +31,7 @@ try {
   for (let i = 0; i < 4; i++) {
     await page.getByRole('tab').nth(i).click(); await page.waitForTimeout(1650);
     assert.equal(await page.getByRole('tab').nth(i).getAttribute('aria-selected'), 'true');
+    assert.ok(await page.locator('.scene-marker:not([hidden])').count() <= 1);
     await page.screenshot({ path: out + `zone-${i + 1}-390.png`, fullPage: true });
   }
   await page.getByRole('tab').nth(1).click(); await page.waitForTimeout(1650);
@@ -66,6 +67,25 @@ try {
         requestAnimationFrame(sample);
       });
     }
+    const city = scene.root.getObjectByName('city-context');
+    const cityDraws = city.children.length;
+    let finiteGeometry = true;
+    city.traverse(object => {
+      if (!object.geometry) return;
+      const vertices = object.geometry.getAttribute('position').array;
+      finiteGeometry &&= [...vertices].every(Number.isFinite);
+    });
+    const source = await (await fetch('/src/scene.ts')).text();
+    const threeUrl = source.match(/import \* as THREE from "([^"]+)"/)[1];
+    const THREE = await import(threeUrl);
+    let clearSightlines = true;
+    for (const [zone, point] of [[1,[-1.9,1.9,4.25]],[2,[-3.5,1.8,-2.1]],[3,[3.65,1.17,-2.8]]]) {
+      scene.select(zone); scene.transition.started -= 1600; scene.render(performance.now());
+      const target = new THREE.Vector3(...point), projected = target.clone().project(scene.camera);
+      const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(projected.x, projected.y), scene.camera);
+      const distance = target.clone().sub(ray.ray.origin).dot(ray.ray.direction);
+      clearSightlines &&= !ray.intersectObject(city, true).some(hit => hit.distance < distance - .05);
+    }
     const maxRouteDraws = scene.routeMeshes.length;
     const noRoofTranslation = scene.roof.position.y === 0 && scene.facade.position.y === 0;
     const routeDots = scene.routeMeshes[3];
@@ -78,9 +98,10 @@ try {
     }
     const exactRamp = rampHeightAt(entrance.landingFront) === entrance.landingTop && Math.abs(rampHeightAt(entrance.rampEnd) - entrance.groundTop) < 1e-9;
     const entranceRoute = routes[1].every(([x,y,z]) => z <= entrance.landingFront || Math.abs(y - rampHeightAt(z) - .025) < 1e-9);
-    scene.dispose(); return { stable, modes, maximumCalls, maxRouteDraws, noRoofTranslation, noWallCrossing, exactRamp, entranceRoute };
+    scene.dispose(); return { cityDraws, finiteGeometry, clearSightlines, stable, modes, maximumCalls, maxRouteDraws, noRoofTranslation, noWallCrossing, exactRamp, entranceRoute };
   });
   assert.ok(rendering.stable && rendering.modes && rendering.noRoofTranslation);
+  assert.ok(rendering.cityDraws <= 12 && rendering.finiteGeometry && rendering.clearSightlines);
   assert.ok(rendering.maximumCalls < 200); assert.equal(rendering.maxRouteDraws, 4);
   assert.ok(rendering.noWallCrossing && rendering.exactRamp && rendering.entranceRoute);
   console.log('PASS: four views, native-density canvas, 320/390/430px, 54px map-bound dock, keyboard, reduced motion, interrupted transition, stable shaders, four instanced routes, exact ramp endpoints and restroom door clearance.', rendering);
