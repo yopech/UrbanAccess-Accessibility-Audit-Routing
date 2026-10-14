@@ -341,6 +341,19 @@ body:has(.audit-list-screen, .audit-review) .shell-header { display: none; }
 .list-empty > svg { margin: auto; }
 .list-empty h2 { font-size: 18px; color: #18181b; }
 .list-empty p { font-size: 14px; }
+.audit-list-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.list-back-link { display: grid; place-items: center; flex: none; width: 44px; height: 44px; color: #18181b; border-radius: 12px; transition: background 160ms var(--motion-ease), transform 160ms var(--motion-ease); }
+.list-back-link:hover { background: #dedee3; }
+.list-back-link:active { transform: scale(.96); background: #d4d4da; }
+@media(max-width:390px) { .audit-list-screen .audit-list-title h1 { font-size: 28px; } }
+.list-empty-illustrated { padding: 24px 12px; }
+.list-empty-illustrated img { display: block; width: 180px; height: auto; margin: 0 auto 18px; }
+.list-empty-illustrated h2 { margin: 0; font-size: 17px; font-weight: 500; }
+.audit-create-page .workspace-content { max-width: 640px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+.audit-main.audit-create-page { max-width: none; padding: 0; color: #18181b; }
+body:has(.audit-create-page) :is(.shell-header, .build-label) { display: none; }
+.create-audit-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 20; padding: 16px max(16px, calc((100vw - 608px) / 2)) max(16px, env(safe-area-inset-bottom)); background: rgb(248 248 249 / 25%); backdrop-filter: blur(20px) saturate(180%); border-top: 1px solid #ffffff80; }
+.create-audit-dock .field-button { width: 100%; border-radius: 16px; }
 .review-topbar .workspace-title h1 { font-size: 15px; }
 .review-topbar .review-back { padding: 8px; border: 0; }
 .review-back span { font-size: 13px; }
@@ -745,7 +758,7 @@ body:has(.audit-list-screen) .build-label { display:none; }
 @media(max-width:360px) { .audit-list-dock .field-button { font-size:12px; padding-inline:8px; } .audit-list-dock .new-audit-button { padding-inline:8px; gap:4px; } }
 
 /* Shared frosted action surfaces, including dialogs rendered through portals. */
-:is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock) {
+:is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock, .create-audit-dock) {
   background: #f8f9f8;
   border-top: 1px solid var(--glass-edge);
   border-radius: 24px 24px 0 0;
@@ -754,7 +767,7 @@ body:has(.audit-list-screen) .build-label { display:none; }
 .dictation-footer { padding: 12px; margin-top: 12px; border-radius: 20px; }
 .photo-dock { background: #232725; color: white; }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock) {
+  :is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock, .create-audit-dock) {
     background: var(--glass-surface);
     -webkit-backdrop-filter: var(--glass-filter);
     backdrop-filter: var(--glass-filter);
@@ -762,7 +775,7 @@ body:has(.audit-list-screen) .build-label { display:none; }
   .photo-dock { background: linear-gradient(180deg, rgba(25,30,27,.1), rgba(16,22,18,.3)); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  :is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock) {
+  :is(.bottom-action-bar, .audit-list-dock, .punch-export-dock, .dictation-footer, .photo-dock, .create-audit-dock) {
     background: #f8f9f8;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -773,3 +786,82 @@ body:has(.audit-list-screen) .build-label { display:none; }
 .audit-progress-labels > span:last-child { color: var(--brand); }
 .audit-list-dock .field-button:not(.new-audit-button) { color: var(--brand); background: transparent; border-color: transparent; }
 .audit-editor .button-row .field-button-primary { background: var(--brand); border-color: var(--brand); }
+
+/* One motion vocabulary: quick feedback, continuous movement, native scrolling. */
+:root { --motion-feedback:160ms; --motion-move:240ms; --motion-ease:cubic-bezier(.16,1,.3,1); }
+.route-stage { background:#ececee; }
+::view-transition-group(root) { background:#fff; animation-duration:260ms; }
+::view-transition-old(root) { animation:route-fade-out 110ms ease-out both; mix-blend-mode:normal; }
+::view-transition-new(root) { animation:route-fade-in 190ms 70ms ease-out both; mix-blend-mode:normal; }
+@keyframes route-fade-out { to { opacity:0; } }
+@keyframes route-fade-in { from { opacity:0; } to { opacity:1; } }
+:is(button,summary,a,[role=button]) { -webkit-tap-highlight-color:transparent; }
+:is(button,summary,a,[role=button],.audit-list-card,.element-card,.punch-task) {
+  transition:background-color var(--motion-feedback) ease,color var(--motion-feedback) ease,border-color var(--motion-feedback) ease,box-shadow var(--motion-feedback) ease,opacity var(--motion-feedback) ease,transform var(--motion-feedback) var(--motion-ease);
+}
+button:not(:disabled):active, summary:active { transform:scale(.97); }
+.audit-list-screen .audit-list-card:active { transform:scale(.99); background:#f8faf8; }
+.audit-list-screen .audit-list-card:has(.audit-card-actions:active) { transform:none; }
+input,textarea,select,.measurement-number-card,.audit-search,.notes-row { transition:border-color var(--motion-feedback) ease,background-color var(--motion-feedback) ease,box-shadow var(--motion-feedback) ease; }
+input:focus,textarea:focus,select:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgb(18 55 42 / 9%); }
+.measurement-number-card:focus-within,.audit-search:focus-within { box-shadow:0 0 0 3px rgb(18 55 42 / 9%); }
+:is(.audit-list-progress,.audit-header-progress) > span,
+.audit-header-progress [role=progressbar] > div { transition:width 280ms var(--motion-ease); }
+.apple-attribute-toggle span { transition:transform 220ms var(--motion-ease); }
+.apple-attribute-toggle::before { transition:background-color 180ms ease; }
+.expert-switch-thumb { transform:translateX(0); transition:transform 220ms var(--motion-ease); }
+.audit-review .expert-switch.is-checked { justify-content:flex-start; }
+.expert-switch.is-checked .expert-switch-thumb { transform:translateX(24px); }
+.audit-editor .zone-switcher { scrollbar-width:none; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; scroll-snap-type:x proximity; }
+.zone-switcher::-webkit-scrollbar { display:none; }
+.zone-switcher button { scroll-snap-align:start; }
+
+/* Menus stay mounted so their portal dialogs survive a menu closing. */
+.list-more-menu { position:relative; flex:none; margin-left:auto; }
+.audit-list-screen .workspace-topbar { z-index:40; }
+.list-more-panel { position:absolute; right:0; top:calc(100% + 8px); width:min(260px,calc(100vw - 32px)); display:flex; flex-direction:column; align-items:stretch; gap:4px; margin:0; padding:8px; background:#fff; border:1px solid #e4e4e7; border-radius:16px; box-shadow:0 12px 36px rgb(18 55 42 / 14%); z-index:45; }
+.list-more-panel .field-button { width:100%; justify-content:flex-start; border:0; background:transparent; }
+.list-more-panel .archive-filter { margin:0; padding:8px; font-size:14px; }
+.audit-list-screen .audit-card-actions { position:absolute; top:4px; right:4px; }
+.audit-list-screen .audit-card-actions .audit-card-menu { position:relative; top:auto; right:auto; }
+.audit-card-menu-panel { top:calc(100% + 4px); }
+.motion-popover { transform-origin:top right; opacity:0; transform:translateY(-5px) scale(.98); visibility:hidden; pointer-events:none; transition:opacity 150ms ease,transform 180ms var(--motion-ease),visibility 0s 180ms; }
+.motion-popover[data-state=open] { opacity:1; transform:translateY(0) scale(1); visibility:visible; pointer-events:auto; transition-delay:0s; }
+
+/* Routine autosave is announced without adding a row to the header. */
+.audit-header-save-status { position:absolute; top:calc(100% + 8px); right:16px; width:min(360px,calc(100vw - 32px)); margin:0; padding:10px 14px; background:#fff5f4; color:#89211a; border:1px solid #e7b5af; border-radius:14px; box-shadow:0 6px 24px rgb(18 55 42 / 12%); z-index:45; }
+.audit-header-save-status .save-badge-compact { justify-content:flex-start; padding:0; border:0; background:transparent; }
+
+.dialog-overlay[data-state=open] { animation:overlay-in 180ms ease both; }
+.dialog-overlay[data-state=closed] { animation:overlay-out 150ms ease both; }
+.dialog-content[data-state=open] { animation:dialog-in 240ms var(--motion-ease) both; }
+.dialog-content[data-state=closed] { animation:dialog-out 170ms ease both; }
+.dialog-content.photo-fullscreen[data-state=open] { animation:route-fade-in 180ms ease both; }
+.dialog-content.photo-fullscreen[data-state=closed] { animation:route-fade-out 150ms ease both; }
+@keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
+@keyframes overlay-out { to { opacity:0; } }
+@keyframes dialog-in { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes dialog-out { to { opacity:0; transform:translateY(12px); } }
+@media(hover:hover) {
+  button:not(:disabled):not(.field-button-primary):not(.apple-attribute-toggle):not([aria-checked=true]):not(.expert-switch):hover,summary:hover { background-color:#e9eeea; }
+  .field-button-primary:not(:disabled):hover { background-color:#1d4e3b; border-color:#1d4e3b; box-shadow:0 4px 12px rgb(18 55 42 / 18%); }
+  .audit-list-screen .audit-list-card:hover,.element-navigation-row:hover,.punch-task:hover { box-shadow:0 4px 18px rgb(18 55 42 / 9%); background-color:#fbfdfb; }
+  input:hover,textarea:hover,select:hover { border-color:#8c9e92; }
+  .audit-card-link:hover { color:var(--brand); }
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+  button:not(:disabled):active,summary:active,.audit-list-screen .audit-list-card:active { transform:none; }
+  ::view-transition-group(root),::view-transition-old(root),::view-transition-new(root) { animation:none!important; }
+}
+@media print { .motion-popover { display:none!important; } .route-stage { background:white; } }
+.workspace-kicker,.audit-editor .segment-label,.audit-editor .element-notes h3,.field-proposals h3,.audit-editor .audit-header-title p { text-transform:none; letter-spacing:normal; }
+/* Shared editor / punch-list navigation. */
+:is(.audit-editor,.audit-review,.audit-create-page) .audit-header { position:sticky; top:0; z-index:30; padding-top:calc(env(safe-area-inset-top,0px) + 12px); background:rgba(255,255,255,.94); color:#18181b; backdrop-filter:blur(12px); }
+:is(.audit-editor,.audit-review,.audit-create-page) .audit-header-row { display:grid; grid-template-columns:56px minmax(0,1fr) 56px; gap:8px; height:52px; padding-inline:16px; margin:0 0 8px; max-width:1040px; margin-inline:auto; }
+:is(.audit-editor,.audit-review,.audit-create-page) .audit-header-title { text-align:center; min-width:0; }
+:is(.audit-editor,.audit-review,.audit-create-page) .audit-header-title h1 { font-size:16px; font-weight:600; line-height:1.3; letter-spacing:-.025em; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+:is(.audit-editor,.audit-review,.audit-create-page) .audit-header-button { display:grid; place-items:center; width:44px; height:44px; min-height:44px; padding:0; border:0; background:transparent; color:#18181b; border-radius:12px; align-self:center; }
+.header-right-slot { width:56px; }
+/* Open to the left of the trigger, leaving other card menus tappable. */
+.audit-card-menu-panel { right:48px; top:0; width:min(248px,calc(100vw - 88px)); }

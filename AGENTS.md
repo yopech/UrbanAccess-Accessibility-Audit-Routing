@@ -16,3 +16,10 @@ Rules:
 - Use conventional commits.
 - Update OpenAPI when API behavior changes.
 - Update documentation when domain behavior changes.
+
+UI design code (user-approved):
+- Keep the product's dark green brand, neutral grouped backgrounds and consistent typography across the app and landing page.
+- Do not use uppercase, letter-spaced eyebrow headings or decorative mini captions.
+- Add headings and labels only when they help understanding or interaction; avoid repeating a caption in every block.
+- Keep navigation compact; controls must not unnecessarily obscure content.
+- Use continuous, smooth motion and respect reduced-motion preferences.

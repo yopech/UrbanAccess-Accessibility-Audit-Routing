@@ -55,7 +55,7 @@ function Editor({ controller, navigate, register, focusElementId, focusField, vo
     } catch (cause) { setZoneError(cause instanceof Error ? cause.message : 'Не удалось открыть зону.'); }
     finally { setSwitching(false); }
   };
-  return <main className="audit-page audit-editor pb-[88px]">
+  return <main className="audit-page audit-editor pb-[88px]" data-page-ready="true">
     <AuditHeader name={audit.object.name} saveState={snapshot.saveState} zoneLabel={`${({ Z1: 'Территория', Z2: 'Входная группа', Z3: 'Пути внутри здания', Z4: 'Санузел' } as Record<string,string>)[zone.code]} · ${zone.code}`} readyCount={zoneElements.filter(element => element.readiness === 'ready').length} totalCount={zoneElements.length}
       backLabel={focusElementId ? 'Вернуться к элементам' : 'Все обследования'} onBack={() => { void leave(focusElementId ? `#/audits/${audit.id}?zone=${zone.code}` : '#/audits'); }} onRetry={() => { void controller.retry(); }}>
       <nav className="zone-switcher zone-scope-bar" aria-label="Зоны обследования">{ZONE_TEMPLATES.map(template => <button key={template.code} type="button" aria-current={zone.code === template.code ? 'page' : undefined} disabled={snapshot.locked || switching || (Boolean(audit.archivedAt) && !Object.values(audit.zones).some(zone => zone.code === template.code))} onClick={() => { void selectZone(template.code as SupportedZoneCode); }}>{template.code} {({ Z1: 'Территория', Z2: 'Вход', Z3: 'Внутри', Z4: 'Санузел' } as Record<string,string>)[template.code]}</button>)}</nav>
@@ -73,7 +73,7 @@ export function AuditEditorPage({ id, navigate, register, ...focus }: Focus & { 
   useEffect(() => { let active = true; setController(undefined); setError(''); void audits.load(id).then((audit) => {
     if (active) { if (audit) setController(createEditor(audit)); else setError('Обследование не найдено.'); }
   }, (cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'Не удалось открыть обследование.'); }); return () => { active = false; }; }, [id]);
-  if (error) return <main className="audit-page"><p role="alert">{error}</p><Button onClick={() => navigate('#/audits')}>Все обследования</Button></main>;
+  if (error) return <main className="audit-page" data-page-ready="true"><p role="alert">{error}</p><Button onClick={() => navigate('#/audits')}>Все обследования</Button></main>;
   if (!controller) return <main className="audit-page" role="status">Открываем обследование</main>;
   return <Editor key={id} {...focus} controller={controller} navigate={navigate} register={register} />;
 }

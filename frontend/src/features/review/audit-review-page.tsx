@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight, Download, FileText, Camera, Check, Printer } from 'lucide-react';
+import { ChevronRight, Download, FileText, Camera, Check, Printer } from 'lucide-react';
+import { AuditNavigationRow } from '../audits/audit-header.js';
 import { AuditPrintView } from './audit-print-view.js';
 import { primaryMeasurement, type Audit, type AuditCommand } from '../../domain/audit-model.js';
 import { audits, createEditor } from '../audits/audit-service.js';
@@ -67,16 +68,14 @@ function Review({ controller, navigate, register }: { controller: Controller; na
       const latest = await audits.load(audit.id); if (latest && latest.revision > bundle.snapshot.auditRevision) setStatus((text) => `${text} Текущая редакция обследования уже ${latest.revision}; документ содержит выбранную редакцию ${bundle.snapshot.auditRevision}.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Экспорт не завершён.'); } finally { busyRef.current = false; setBusy(false); }
   };
-  return <main className="audit-page audit-review">
-    <header className="workspace-topbar review-topbar"><div className="workspace-topbar-inner">
-      <Button className="review-back" aria-label="Вернуться к карточкам" disabled={busy} onClick={() => navigate(`#/audits/${audit.id}`)}><ChevronLeft size={20} aria-hidden /><span>Назад в редактор</span></Button>
-      <div className="workspace-title"><span className="workspace-kicker">Список доработок · {audit.scope.includedZones.join(', ')}</span><h1>{audit.object.name}</h1></div>
-      <Button aria-label="Экспорт документа" className="quiet-button" onClick={() => document.getElementById('act-export')?.scrollIntoView({ behavior: 'smooth' })}><Download size={18} aria-hidden /><span>Экспорт</span></Button>
-    </div></header>
+  return <main className="audit-page audit-review" data-page-ready={loaded}>
+    <header className="audit-header review-topbar">
+      <AuditNavigationRow name={audit.object.name} backLabel="Вернуться к карточкам" disabled={busy} onBack={() => navigate(`#/audits/${audit.id}`)} />
+    </header>
     <div className="workspace-content review-content">
       <div className="review-object-line"><p>{audit.object.address}</p><SaveStatusBadge compact state={snapshot.saveState} onRetry={() => { void controller.retry(); }} /></div>
       <section className="punch-list" aria-label="Список доработок">
-        <h1>Список доработок</h1><p className="punch-subtitle">Осталось действий для проверки: {remaining}</p>
+        <h1>Список доработок</h1><p className="sr-only">Осталось действий для проверки: {remaining}</p>
         <h2 className="sr-only">{audit.scope.includedZones.length === 1 ? 'Готовность входной группы' : 'Готовность обследования'}</h2>
         <div className="review-progress" role="progressbar" aria-label="Готовность карточек обследования" aria-valuenow={ready} aria-valuemin={0} aria-valuemax={total}><div style={{ width: `${total ? ready / total * 100 : 0}%` }} /></div>
         {!loaded && <p role="status">Загружаем голосовые черновики и документы</p>}
@@ -114,6 +113,6 @@ function Review({ controller, navigate, register }: { controller: Controller; na
 export function AuditReviewPage({ id, navigate, register }: { id: string; navigate(route: string): void; register(controller: Controller | undefined): void }) {
   const [controller, setController] = useState<Controller>(); const [error, setError] = useState('');
   useEffect(() => { let active = true; void audits.load(id).then((audit) => { if (active) { if (!audit) setError('Обследование не найдено.'); else setController(createEditor(audit)); } }, (cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : 'Не удалось открыть сводку.'); }); return () => { active = false; }; }, [id]);
-  if (error) return <main className="audit-page"><p role="alert">{error}</p><Button onClick={() => navigate('#/audits')}>Все обследования</Button></main>;
+  if (error) return <main className="audit-page" data-page-ready="true"><p role="alert">{error}</p><Button onClick={() => navigate('#/audits')}>Все обследования</Button></main>;
   return controller ? <Review controller={controller} navigate={navigate} register={register} /> : <main className="audit-page" role="status">Открываем сводку</main>;
 }

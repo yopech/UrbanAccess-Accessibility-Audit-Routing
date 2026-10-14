@@ -15,7 +15,7 @@ export default defineConfig({
       description: 'Обследования доступности объектов', start_url: base, scope: base,
       display: 'standalone', background_color: '#f2f4f0', theme_color: '#12372a',
       icons: [{ src: `${base}icons/icon.svg`, sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }] },
-    injectManifest: { globPatterns: ['**/*.{html,js,css,svg,woff,woff2,json}'], maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 },
+    injectManifest: { globPatterns: ['**/*.{html,js,css,svg,png,woff,woff2,json}'], maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 },
   })],
   build: { outDir: '../dist/frontend', emptyOutDir: true,
     rollupOptions: { input: { main: resolve('frontend/index.html'),

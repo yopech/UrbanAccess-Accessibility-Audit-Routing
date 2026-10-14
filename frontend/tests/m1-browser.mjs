@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const errors = []; let server; let browser; let inspectedPage; let count = 0;
 const pass = (message) => console.log(`PASS ${++count}: ${message}`);
 try {
-  execFileSync(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: root, env: { ...process.env, URBANACCESS_BASE: '/frontend/' }, stdio: 'pipe' });
+  if (process.env.URBANACCESS_USE_PREBUILT !== '1') execFileSync(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'], { cwd: root, env: { ...process.env, URBANACCESS_BASE: '/frontend/' }, stdio: 'pipe' });
   server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://localhost'); const file = url.pathname.replace(/^\/frontend\//, '') || 'index.html';
     if (!url.pathname.startsWith('/frontend/') || file.includes('..')) { response.writeHead(404); response.end(); return; }
@@ -163,7 +163,7 @@ try {
   await menu.nth(0).locator('summary').click(); assert.equal(await page.locator('.audit-card-menu[open]').count(),1); assert.equal(await menu.nth(1).getAttribute('open'),null);
   await page.getByRole('heading',{name:'Обследования',exact:true}).click(); assert.equal(await page.locator('.audit-card-menu[open]').count(),0);
   await menu.nth(0).locator('summary').focus(); await page.keyboard.press('Enter'); assert.equal(await page.locator('.audit-card-menu[open]').count(),1); await page.keyboard.press('Escape'); assert.equal(await page.locator('.audit-card-menu[open]').count(),0);
-  await page.getByLabel('Показать архив').uncheck(); await page.getByRole('button',{name:'Настройки списка',exact:true}).click();
+  await page.getByRole('button',{name:'Настройки списка',exact:true}).click(); await page.getByLabel('Показать архив').uncheck();
   for(const width of [320,390,430]) { await page.setViewportSize({width,height:900}); const resume=page.getByRole('button',{name:'Продолжить',exact:true}); assert.equal(await resume.evaluate(el=>getComputedStyle(el).whiteSpace),'nowrap'); assert.ok(await page.locator('.audit-list-dock').evaluate(dock=>[dock,...dock.querySelectorAll('button')].every(el=>{const box=el.getBoundingClientRect();return box.left>=0&&box.right<=innerWidth&&el.scrollWidth<=el.clientWidth;}))); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false); const card=await page.locator('.audit-list-card').first().boundingBox(); assert.ok(card.height<=128,`Compact card height: ${card.height}`); await page.screenshot({path:path.join(root,`artifacts/workspace/compact-list-${width}.png`),fullPage:true}); }
   await page.getByRole('button',{name:'Новое обследование',exact:true}).click();
   for(const width of [320,390,430]) { await page.setViewportSize({width,height:900}); await page.getByLabel('Название объекта',{exact:true}).focus(); assert.equal(await page.getByLabel('Название объекта',{exact:true}).evaluate(el=>getComputedStyle(el).fontSize),'16px'); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false); await page.screenshot({path:path.join(root,`artifacts/workspace/details-${width}.png`),fullPage:true}); }

@@ -5,8 +5,8 @@ import { validLocalDate, type Audit, type ObjectDetails } from '../../domain/aud
 import { updateParticipants } from '../../pwa/update-participants.js';
 import { pwaUpdates } from '../../pwa/pwa-update-controller.js';
 export interface ObjectDetailsValues { object: ObjectDetails; inspectedOn: string; authorName: string; purpose: string; }
-export function ObjectDetailsForm({ initial, onSubmit, onCancel, onSubmitted }: {
-  initial?: Audit; onSubmit: (value: ObjectDetailsValues) => Promise<void>; onCancel: () => void; onSubmitted?: () => void;
+export function ObjectDetailsForm({ initial, onSubmit, onCancel, onSubmitted, standalone = false }: {
+  initial?: Audit; onSubmit: (value: ObjectDetailsValues) => Promise<void>; onCancel: () => void; onSubmitted?: () => void; standalone?: boolean;
 }) {
   const [name, setName] = useState(initial?.object.name ?? '');
   const [address, setAddress] = useState(initial?.object.address ?? '');
@@ -36,7 +36,7 @@ export function ObjectDetailsForm({ initial, onSubmit, onCancel, onSubmitted }: 
     { key: 'date', label: 'Дата обследования', value: date, change: setDate }, { key: 'author', label: 'Исполнитель', value: author, change: setAuthor },
     { key: 'purpose', label: 'Цель обследования', value: purpose, change: setPurpose }];
   return <form className="surface details-form" onSubmit={(event) => { void submit(event); }} onChange={() => { dirty.current = true; }}>
-    <div className="details-form-heading"><p className="workspace-kicker">Объект обследования</p><h2>{initial ? 'Реквизиты объекта' : 'Новое обследование'}</h2></div>
+    {!standalone && <div className="details-form-heading"><h2>{initial ? 'Реквизиты объекта' : 'Новое обследование'}</h2></div>}
     <fieldset disabled={busy || pwa.status === 'preparing'}>
       <div className="details-fields">{fields.map((field) => <label className={`field details-field-${field.key}`} key={field.key} htmlFor={`object-${field.key}`}><span>{field.label}</span>
         <input id={`object-${field.key}`} type={field.key === 'date' ? 'date' : 'text'} value={field.value} onChange={(event) => field.change(event.target.value)}
@@ -48,8 +48,8 @@ export function ObjectDetailsForm({ initial, onSubmit, onCancel, onSubmitted }: 
       <p className="secondary-text">Новые обследования начинаются с входной группы Z2. Территорию, внутренние пути и санузел можно добавить переключателем зон в редакторе. В документ входят только созданные зоны.</p>
       {errors.scope && <p role="alert" className="field-error">{errors.scope}</p>}
       {errors.submit && <p role="alert" className="field-error">{errors.submit}</p>}
-      <div className="action-row"><Button type="submit" variant="primary">{busy ? 'Сохраняем' : initial ? 'Сохранить реквизиты' : 'Создать обследование'}</Button>
-        <Button onClick={onCancel}>Отмена</Button></div>
+      <div className={standalone ? 'create-audit-dock' : 'action-row'}><Button type="submit" variant="primary">{busy ? 'Сохраняем' : initial ? 'Сохранить реквизиты' : 'Создать обследование'}</Button>
+        {!standalone && <Button onClick={onCancel}>Отмена</Button>}</div>
     </fieldset>
   </form>;
 }

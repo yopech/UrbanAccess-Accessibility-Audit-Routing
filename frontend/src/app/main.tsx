@@ -1,4 +1,6 @@
-import { StrictMode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { StrictMode, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
+import { presentPage } from './page-motion.js';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/cyrillic-400.css';
@@ -8,6 +10,7 @@ import { openDatabase } from '../storage/database.js';
 import { pwaUpdates } from '../pwa/pwa-update-controller.js';
 import { PwaUpdatePrompt } from '../pwa/pwa-update-prompt.js';
 import { AuditListPage } from '../features/audits/audit-list-page.js';
+import { AuditCreatePage } from '../features/audits/audit-create-page.js';
 import { AuditReviewPage } from '../features/review/audit-review-page.js';
 import { AuditEditorPage } from '../features/audits/audit-editor-page.js';
 import { installZ2Template } from '../features/audits/audit-service.js';
@@ -19,6 +22,8 @@ function App() {
   const pwa = useSyncExternalStore(pwaUpdates.subscribe, pwaUpdates.getSnapshot, pwaUpdates.getSnapshot);
   const [ready, setReady] = useState(false); const [error, setError] = useState('');
   const [route, setRoute] = useState(accessibleRoute(location.hash));
+  const stage = useRef<HTMLDivElement>(null);
+  const listScrollY = useRef(0);
   const routeRef = useRef(route); const navigation = useRef(Promise.resolve());
   const activeEditor = useRef<EditorController<Audit, AuditCommand> | undefined>(undefined);
   const register = useCallback((controller: EditorController<Audit, AuditCommand> | undefined) => { activeEditor.current = controller; }, []);
@@ -32,8 +37,12 @@ function App() {
       if (controller && (await controller.flush()).kind !== 'saved') {
         history.replaceState(null, '', routeRef.current); setError('Сначала завершите сохранение или разрешите конфликт.'); return;
       }
-      routeRef.current = target; setError(''); setRoute(target);
-      if (location.hash !== target) location.hash = target;
+      await presentPage(stage.current, () => {
+        if (routeRef.current === '#/audits') listScrollY.current = window.scrollY;
+        routeRef.current = target;
+        flushSync(() => { setError(''); setRoute(target); });
+        if (location.hash !== target) location.hash = target;
+      });
     }).catch((cause: unknown) => { history.replaceState(null, '', routeRef.current); setError(cause instanceof Error ? cause.message : 'Переход не завершён.'); });
   }, []);
   useEffect(() => {
@@ -44,7 +53,7 @@ function App() {
     void pwaUpdates.start();
     return () => { active = false; window.removeEventListener('hashchange', change); pwaUpdates.stop(); };
   }, [navigate]);
-  useEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [route]);
+  useLayoutEffect(() => { window.scrollTo({ top: 0, left: 0, behavior: 'instant' }); }, [route]);
   const match = /^#\/audits\/([0-9a-f-]+)(\/review)?(?:\?(.*))?$/i.exec(route);
   const focus = new URLSearchParams(match?.[3] ?? '');
   return <><header className="shell-header"><strong>UrbanAccess</strong><span>Данные хранятся на этом устройстве</span>
@@ -52,9 +61,10 @@ function App() {
     <PwaUpdatePrompt />
     {error && <p role="alert" className="global-error">{error}</p>}
     {!ready && !error && <p role="status" className="audit-page">Открываем локальные данные</p>}
-    <div inert={pwa.status === 'preparing'}>{ready && (route === '#/audits' ? <AuditListPage navigate={navigate} />
+    <div ref={stage} className="route-stage" inert={pwa.status === 'preparing'}>{ready && (route === '#/audits' ? <AuditListPage navigate={navigate} initialScrollY={listScrollY.current} />
+      : route === '#/audits/new' ? <AuditCreatePage navigate={navigate} />
       : match ? (match[2] ? <AuditReviewPage key={route} id={match[1]!} navigate={navigate} register={register} /> : <AuditEditorPage key={route} id={match[1]!} navigate={navigate} register={register} focusElementId={focus.get('element') ?? undefined} focusField={focus.get('field') ?? undefined} voiceDraftId={focus.get('voice') ?? undefined} zoneCode={focus.get('zone') ?? undefined} />)
-      : <main className="audit-page"><h1>Раздел не найден</h1><button onClick={() => navigate('#/audits')}>Открыть обследования</button></main>)}</div>
+      : <main className="audit-page" data-page-ready="true"><h1>Раздел не найден</h1><button onClick={() => navigate('#/audits')}>Открыть обследования</button></main>)}</div>
     <small className="build-label" data-build={__APP_VERSION__}>Версия {__APP_VERSION__}</small>
   </>;
 }

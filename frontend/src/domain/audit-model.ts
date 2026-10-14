@@ -71,7 +71,8 @@ export type AuditCommand =
   | { type: 'detachPhoto'; photoId: UUID; elementId: UUID }
   | { type: 'restorePhoto'; photo: Photo }
   | { type: 'reviewAudit'; expert: Actor }
-  | { type: 'archiveAudit' };
+  | { type: 'archiveAudit' }
+  | { type: 'unarchiveAudit' };
 export interface ReadinessQuestion { elementId: UUID; field: string; message: string; }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function check(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
@@ -227,7 +228,12 @@ export function applyAuditCommands(current: Readonly<Audit> | undefined, command
       check(!audit && command.audit.id === context.auditId, 'Обследование уже существует или имеет другой ID.');
       audit = structuredClone(command.audit); validateAudit(audit); continue;
     }
-    check(audit, 'Сначала создайте обследование.'); check(!audit.archivedAt, 'Архивное обследование доступно только для чтения.');
+    check(audit, 'Сначала создайте обследование.');
+    if (command.type === 'unarchiveAudit') {
+      check(audit.archivedAt, 'Обследование уже находится в основном списке.');
+      delete audit.archivedAt; continue;
+    }
+    check(!audit.archivedAt, 'Архивное обследование доступно только для чтения.');
     if (command.type === 'reviewAudit') {
       checkActor(command.expert); check(validateAuditReadiness(audit).length === 0, 'Сначала подтвердите карточки и заполните обязательные сведения.');
       audit.responsibleExpert = { ...command.expert }; audit.status = 'reviewed';
